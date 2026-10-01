@@ -292,7 +292,9 @@ public class EmisionPolizaAccidentesPage extends BasePage {
         try {
             seleccionarOpcionSelect(combo, valor); // "07"
             return;
-        } catch (Exception ignored) { }
+        } catch (Exception e) {
+            log.debug("seleccionarOpcionSelect falló, se usa el fallback: {}", e.toString());
+        }
 
         String sinCero = valor.replaceFirst("^0+(?!$)", ""); // "07" -> "7"
         seleccionarOpcionSelect(combo, sinCero);

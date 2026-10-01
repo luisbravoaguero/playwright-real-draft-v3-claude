@@ -69,6 +69,7 @@ public class ExtentCucumberStepsPlugin implements ConcurrentEventListener {
         try {
             // Always attach screenshot after each step
             String base64 = ScreenshotUtils.screenshotBase64();
+            ExtentReportManager.setLastStepScreenshot(base64); // reutilizado por Hooks.@AfterStep (reporte Cucumber)
             var media = MediaEntityBuilder.createScreenCaptureFromBase64String(base64).build();
 
             if (status == Status.PASSED) {

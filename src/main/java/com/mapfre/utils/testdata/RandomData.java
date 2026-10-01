@@ -9,7 +9,14 @@ public final class RandomData {
     private RandomData() {}
 
     private static Random rnd() {
-        // reproducible per scenario if data.seed provided
+        // secuencia compartida del escenario: cada llamada devuelve un valor distinto,
+        // reproducible si se pasa -Ddata.seed
+        return SeedManager.random();
+    }
+
+    private static Random correlatedRnd() {
+        // Random nuevo con la misma semilla del escenario: placa, VIN y numero de motor
+        // comparten intencionalmente los primeros 6 caracteres dentro de un mismo escenario
         return new Random(SeedManager.seed());
     }
 
@@ -81,7 +88,7 @@ public final class RandomData {
         String mixedChars = "123456789ABCDEFGHIJKLMNPQRSTUVWXYZ"; // 35 caracteres
         String digits = "123456789"; // 9 caracteres
         StringBuilder sb = new StringBuilder();
-        Random random = rnd();
+        Random random = correlatedRnd();
 
         // Posición 0: 1 letra (nextInt(26))
         sb.append(letters.charAt(random.nextInt(letters.length())));
@@ -107,7 +114,7 @@ public final class RandomData {
         String yearChars = "ABCDEFGHJKLMNPRSTUVWXYZ"; // 24 caracteres (año)
         String visChars = "123456789ABCDEFGHIJKLMNPQRSTUVWXYZ"; // 35 caracteres
 
-        Random random = rnd();
+        Random random = correlatedRnd();
         StringBuilder vin = new StringBuilder();
 
         // WMI: 3 caracteres
@@ -149,7 +156,7 @@ public final class RandomData {
         String digits = "123456789"; // 9 caracteres
         String engineChars = "123456789ABCDEFGHIJKLMNPQRSTUVWXYZ"; // 35 caracteres
 
-        Random random = rnd();
+        Random random = correlatedRnd();
         StringBuilder engineNumber = new StringBuilder();
 
         // Primeros 6 caracteres: sincronizados con randomPlate()

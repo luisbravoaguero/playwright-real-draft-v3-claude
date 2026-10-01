@@ -59,7 +59,7 @@ public class EmitirPolizaVidaLeyPage extends BasePage {
         } catch (com.microsoft.playwright.TimeoutError e) {
             log.error("[VIDA_LEY][EMISION][ERROR] No se cargó la pantalla de emisión");
             throw new AssertionError(
-                    "La pantalla 'Emitir póliza de vida ley' no terminó de cargar correctamente."
+                    "La pantalla 'Emitir póliza de vida ley' no terminó de cargar correctamente.", e
             );
         }
 
@@ -81,7 +81,7 @@ public class EmitirPolizaVidaLeyPage extends BasePage {
         } catch (com.microsoft.playwright.TimeoutError e) {
             log.error("[VIDA_LEY][EMISION][ERROR] No se pudo hacer clic en 'Siguiente'");
             throw new AssertionError(
-                    "No se pudo avanzar al Paso 2 (Emisión). El botón 'Siguiente' no estuvo disponible."
+                    "No se pudo avanzar al Paso 2 (Emisión). El botón 'Siguiente' no estuvo disponible.", e
             );
         }
 
@@ -103,7 +103,7 @@ public class EmitirPolizaVidaLeyPage extends BasePage {
         } catch (com.microsoft.playwright.TimeoutError e) {
             log.error("[VIDA_LEY][EMISION][ERROR] No se pudo confirmar 'Guardar y continuar'");
             throw new AssertionError(
-                    "No se pudo confirmar el guardado de los datos. El botón 'Guardar y continuar' no respondió."
+                    "No se pudo confirmar el guardado de los datos. El botón 'Guardar y continuar' no respondió.", e
             );
         }
 
@@ -122,7 +122,7 @@ public class EmitirPolizaVidaLeyPage extends BasePage {
         } catch (com.microsoft.playwright.TimeoutError e) {
             log.error("[VIDA_LEY][EMISION][ERROR] Paso 2 no disponible");
             throw new AssertionError(
-                    "No se pudo validar el Paso 2 (Emisión). El botón 'Emitir' no está disponible."
+                    "No se pudo validar el Paso 2 (Emisión). El botón 'Emitir' no está disponible.", e
             );
         }
 
@@ -145,7 +145,7 @@ public class EmitirPolizaVidaLeyPage extends BasePage {
         } catch (com.microsoft.playwright.TimeoutError e) {
             log.error("[VIDA_LEY][EMISION][ERROR] No se pudo hacer clic en 'Emitir'");
             throw new AssertionError(
-                    "No se pudo emitir la póliza. El botón 'Emitir' no estuvo disponible."
+                    "No se pudo emitir la póliza. El botón 'Emitir' no estuvo disponible.", e
             );
         }
         log.info("[VIDA_LEY][EMISION] Click en 'Emitir' ejecutado correctamente");

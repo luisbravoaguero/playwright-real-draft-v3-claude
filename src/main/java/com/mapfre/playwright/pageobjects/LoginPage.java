@@ -3,6 +3,7 @@ package com.mapfre.playwright.pageobjects;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.mapfre.config.ConfigManager;
+import com.mapfre.exceptions.FrameworkException;
 import com.microsoft.playwright.options.AriaRole;
 
 public class LoginPage extends BasePage {
@@ -10,8 +11,6 @@ public class LoginPage extends BasePage {
     private final Locator usernameInput;
     private final Locator passwordInput;
     private final Locator loginButton;
-    String user = ConfigManager.getProperty("user.email");
-    String passwordConfig = ConfigManager.getProperty("user.password");
 
 
     public LoginPage(Page page) {
@@ -22,9 +21,19 @@ public class LoginPage extends BasePage {
     }
 
     public void loginOim() {
-        usernameInput.fill(user);
-        passwordInput.fill(passwordConfig);
+        usernameInput.fill(requiredCredential("user.email"));
+        passwordInput.fill(requiredCredential("user.password"));
         clickAndSync(loginButton);
+    }
+
+    private static String requiredCredential(String key) {
+        String value = ConfigManager.getGlobal(key);
+        if (value == null || value.isBlank()) {
+            String envKey = key.toUpperCase().replace('.', '_');
+            throw new FrameworkException("Falta la credencial '" + key + "'. Definirla con -D" + key + "=..., "
+                    + "la variable de entorno " + envKey + " o en config/local/global.properties");
+        }
+        return value;
     }
 
 

@@ -149,10 +149,10 @@ public class DeclaracionSctrPensionSaludPage extends BasePage {
         clickAndSync(panelHeaderAplicacionesButton);
         filasAplicaciones.first().waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
         if(saludNoDeclarada.isChecked()){
-            System.out.println("El checkbox de salud con estado NO DECLARADA ya está seleccionado");
+            log.info("El checkbox de salud con estado NO DECLARADA ya está seleccionado");
         }else{
             clickAndSync(saludNoDeclarada);
-            System.out.println("Se seleccionó el checkbox de salud con estado NO DECLARADA");
+            log.info("Se seleccionó el checkbox de salud con estado NO DECLARADA");
         }
     }
 

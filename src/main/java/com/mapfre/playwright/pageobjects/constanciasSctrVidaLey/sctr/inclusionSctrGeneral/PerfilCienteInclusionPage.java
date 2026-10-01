@@ -79,7 +79,7 @@ public class PerfilCienteInclusionPage extends BasePage{
         filasAplicaciones.first().waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
         sync();
         if(saludDeclarada.isChecked()){
-            System.out.println("El checkbox de salud con estado DECLARADA ya está seleccionado");
+            log.info("El checkbox de salud con estado DECLARADA ya está seleccionado");
         }else{
             clickAndSync(saludDeclarada);
             log.info("[INCLUSION][PERFIL_CLIENTE] Checkbox de salud con estado DECLARADA seleccionado con exito");
@@ -101,7 +101,7 @@ public class PerfilCienteInclusionPage extends BasePage{
         filasAplicaciones.first().waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
         sync();
         if(vidaLeyNoDeclarada.isChecked()){
-            System.out.println("El checkbox de salud con estado DECLARADA ya está seleccionado");
+            log.info("El checkbox de salud con estado DECLARADA ya está seleccionado");
         }else{
             clickAndSync(vidaLeyNoDeclarada);
             log.info("[INCLUSION][PERFIL_CLIENTE] Checkbox de Vida Ley con estado DECLARADA seleccionado con exito");
@@ -194,10 +194,10 @@ public class PerfilCienteInclusionPage extends BasePage{
             headerDeclaracion.waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE).setTimeout(timeoutMs));
         } else if (successIdx == 1) {
             // Ya apareció headerDeclaracion → nada que hacer
-            System.out.println("Success: headerDeclaracion already visible (successIdx=1)");
+            log.info("Success: headerDeclaracion already visible (successIdx=1)");
         } else {
             // Success sin índice conocido → fallback
-            System.out.println("Warning: SUCCESS but unknown successIndex=" + successIdx);
+            log.warn("SUCCESS but unknown successIndex=" + successIdx);
         }
     }*/
 }

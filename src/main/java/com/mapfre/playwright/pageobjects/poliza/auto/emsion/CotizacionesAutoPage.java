@@ -85,7 +85,7 @@ public class CotizacionesAutoPage extends BasePage {
                 Locator verCotizacionButton = filaActual.locator(".g-button:has-text('Ver cotización')");
                 if (numDoc.contains(numeroCotizacion)) {
                     clickAndSync(verCotizacionButton);
-                    System.out.println("Validación completada: Se encontró el numero de cotizacion y se hizo click en el boton ver cotización '"+numDoc+"' and '"+i+"'");
+                    log.info("Validación completada: Se encontró el numero de cotizacion y se hizo click en el boton ver cotización '"+numDoc+"' and '"+i+"'");
                     return; // Termina inmediatamente: encontrado
                 }
             }

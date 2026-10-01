@@ -28,7 +28,7 @@ public final class ElementAsserts {
                 assertThat(locator).isVisible();
             } catch (Exception | AssertionError e) {
                 // Transformamos el error técnico en una excepción de negocio
-                throw new AssertExceptions(message + " - El elemento no se hizo visible.");
+                throw new AssertExceptions(message + " - El elemento no se hizo visible.", e);
             }
         }
 
@@ -36,7 +36,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).containsText(text);
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'");
+                throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'", e);
             }
         }
 
@@ -76,7 +76,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).isHidden();
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El elemento debería estar oculto pero permanece visible.");
+                throw new AssertExceptions(message + " - El elemento debería estar oculto pero permanece visible.", e);
             }
         }
 
@@ -84,7 +84,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).isEnabled();
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El elemento está deshabilitado (Disabled).");
+                throw new AssertExceptions(message + " - El elemento está deshabilitado (Disabled).", e);
             }
         }
 
@@ -92,7 +92,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).not().isEmpty();
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El elemento está vacío.");
+                throw new AssertExceptions(message + " - El elemento está vacío.", e);
             }
         }
 
@@ -109,7 +109,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).containsText(expectedPart);
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " | No se encontró el texto esperado: " + expectedPart);
+                throw new AssertExceptions(message + " | No se encontró el texto esperado: " + expectedPart, e);
             }
         }
 
@@ -131,7 +131,7 @@ public final class ElementAsserts {
                 assertThat(locator).hasText(pattern);
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(
-                        message + " - El texto de la UI no cumple el patrón esperado: " + pattern.pattern()
+                        message + " - El texto de la UI no cumple el patrón esperado: " + pattern.pattern(), e
                 );
             }
         }
@@ -141,7 +141,7 @@ public final class ElementAsserts {
                 assertThat(actualValue).hasValue(expectedValue);
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(
-                        message + " - El elemento no tiene el valor: " + expectedValue
+                        message + " - El elemento no tiene el valor: " + expectedValue, e
                 );
             }
         }
@@ -155,7 +155,7 @@ public final class ElementAsserts {
                     throw new AssertionError("Los valores no son iguales: '" + value1 + "' != '" + value2 + "'");
                 }
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - Valores diferentes: " + e.getMessage());
+                throw new AssertExceptions(message + " - Valores diferentes: " + e.getMessage(), e);
             }
         }
 
@@ -163,7 +163,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).isChecked();
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El checkbox no está marcado.");
+                throw new AssertExceptions(message + " - El checkbox no está marcado.", e);
             }
         }
 
@@ -171,7 +171,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).not().isChecked();
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El checkbox debe estar desmarcado.");
+                throw new AssertExceptions(message + " - El checkbox debe estar desmarcado.", e);
             }
         }
 
@@ -179,7 +179,7 @@ public final class ElementAsserts {
             try {
                 assertThat(cellLocator).not().isEmpty();
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(cellDescription + " - La celda está vacía, se esperaba un valor.");
+                throw new AssertExceptions(cellDescription + " - La celda está vacía, se esperaba un valor.", e);
             }
         }
 
@@ -195,7 +195,7 @@ public final class ElementAsserts {
                     throw new AssertionError("La colección está vacía.");
                 }
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - Se esperaba al menos un elemento en la colección.");
+                throw new AssertExceptions(message + " - Se esperaba al menos un elemento en la colección.", e);
             }
         }
 
@@ -205,7 +205,7 @@ public final class ElementAsserts {
                     throw new AssertionError("El objeto es nulo.");
                 }
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - Se esperaba un objeto no nulo.");
+                throw new AssertExceptions(message + " - Se esperaba un objeto no nulo.", e);
             }
         }
 
@@ -213,7 +213,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).containsText(Pattern.compile(text));
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'");
+                throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'", e);
             }
         }
 
@@ -221,7 +221,7 @@ public final class ElementAsserts {
             try {
                 assertThat(locator).containsText(Pattern.compile(text, Pattern.CASE_INSENSITIVE));
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'");
+                throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'", e);
             }
         }
 
@@ -232,7 +232,7 @@ public final class ElementAsserts {
                     throw new AssertionError("El elemento no contiene la clase: '" + className + "'");
                 }
             } catch (Exception | AssertionError e) {
-                throw new AssertExceptions(message + " - " + e.getMessage());
+                throw new AssertExceptions(message + " - " + e.getMessage(), e);
             }
         }
 

@@ -1,0 +1,3092 @@
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Opus 5.5 · API Usage Billing
+  ▝▝ ▝▝    D:\workspace\playwright-real-draft-v3-claude
+
+  Opus 5.5 is now your default model and it draws down usage faster than Sonnet 5. Switch anytime with /model.
+
+❯ I want you to analyze the project. It is an automation playwright and java    
+  project separated from any source code or application under test. There are a 
+  bunch of set of technologies used into this project structure. I want a       
+  detailed report after you complete analyzing it.                              
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+● Reviewed config, driver, hooks and reporting layers; now reading the page
+  objects, utils and step definitions.
+
+  Ran 6 shell commands (ctrl+o to expand)
+
+● Checked the features and Gherkin structure. Last step: test-data utilities,
+  the login flow, and whether the project compiles.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Analysis report: OIM test automation framework (Playwright + Java)
+
+  The project is a separate, black-box UI test framework for MAPFRE Perú's OIM 
+  portal (oim.pre.mapfre.com.pe). It contains no application code. It has about
+  300 source files: 25k lines of page objects and 5k lines of step definitions.
+  I checked that it compiles: mvn -o test-compile passes with Java 17.
+
+  1. Technology stack
+
+  Layer: Language / build
+  Technology: Java, Maven
+  Version: 17 / 3.9.7
+  Notes: maven-compiler-plugin 3.13, release=17
+  ────────────────────────────────────────
+  Layer: Browser automation
+  Technology: Microsoft Playwright for Java
+  Version: 1.57.0
+  Notes: Chromium, Firefox or WebKit, chosen by setting
+  ────────────────────────────────────────
+  Layer: BDD
+  Technology: Cucumber (cucumber-java, cucumber-testng)
+  Version: 7.33.0
+  Notes: Gherkin steps written in Spanish (the files use the English
+  Given/When/Then keywords)
+  ────────────────────────────────────────
+  Layer: Test runner
+  Technology: TestNG, run through Surefire 3.5.4
+  Version: 7.11.0
+  Notes: Scenarios run in parallel through the @DataProvider(parallel=true)
+  threads
+  ────────────────────────────────────────
+  Layer: Dependency injection
+  Technology: cucumber-picocontainer
+  Version: 7.32
+  Notes: Gives each scenario its own ScenarioContext, PageProvider and
+  SchedulingState
+  ────────────────────────────────────────
+  Layer: Reporting
+  Technology: ExtentReports 5 (Spark + JSON), Cucumber HTML/JSON/JUnit
+  Version: 5.1.2
+  Notes: The JSON output from each pod is merged into one report in CI
+  ────────────────────────────────────────
+  Layer: Logging
+  Technology: SLF4J + slf4j-simple
+  Version: 2.0.17
+  Notes: Plus a custom console step logger
+  ────────────────────────────────────────
+  Layer: Test data
+  Technology: Apache POI (xls/xlsx), Gson, commons-io, commons-lang3
+  Version: 5.5.1 …
+  Notes: Excel upload templates are edited at runtime
+  ────────────────────────────────────────
+  Layer: CI
+  Technology: Jenkins declarative pipeline on Kubernetes pods
+  Version: —
+  Notes: Shared libraries global-pipeline-library and pe-common-pipeline-config,
+
+  code from Bitbucket, logs to Logstash
+
+  2. Architecture
+
+  src/main/java/com/mapfre       ← reusable framework + page objects
+   ├─ config/        ConfigManager (priority: -D > ENV > .properties), 
+  EnvironmentConfig (app.url.<env>)
+   ├─ playwright/driver/  DriverFactory, DriverManager (ThreadLocal 
+  Playwright/Browser/Context/Page), BrowserOptions
+   ├─ playwright/pageobjects/   BasePage (889 lines, ~70 helpers) + ~125 pages 
+  by business area
+   ├─ playwright/components/    MaterialAutocomplete, MaterialDatePicker, 
+  SearchResults component
+   ├─ utils/waits/   FirstAppearanceRace, FirstDisappearanceRace, GestorModal, 
+  OptionalModalWait, ValueWait
+   ├─ utils/         UiSync (spinner "waves" + quiet period), Checkpoint, 
+  DownloadVsErrorRace, RandomData…
+   ├─ asserts/       ElementAsserts (wrapper over PlaywrightAssertions)
+   └─ reporting/     ArtifactSink / ArtifactSinks (lets main code emit 
+  screenshots without knowing Cucumber)
+  src/test/java/com/mapfre
+   ├─ runner/        RunnerCucumberTest (AbstractTestNGCucumberTests)
+   ├─ hooks/         Hooks (@Before/@AfterStep/@After), ExtentLifecycleHooks, 
+  ScenarioContext, ScenarioKeys, PageProvider
+   ├─ reporting/     ExtentCucumberStepsPlugin, ConsoleStepLogger, 
+  ExtentReportManager, ExtentJsonMergeMain
+   └─ stepdefinitions/  ~85 step classes mirroring the page-object tree
+  src/test/resources
+   ├─ features/      55 .feature files, 81 Scenario Outlines
+   ├─ docsFeatures/  22 Markdown docs describing features (flow, validations, 
+  out of scope, data)
+   ├─ testdata/uploads/templates/  xls/xlsx/pdf/txt upload templates
+   └─ images/        vehicle inspection photos for upload
+
+  Business areas covered: policy quote and issuance for Auto (new and used, with
+  inspection), SOAT, SCTR (short and regular period), Vida Ley, Accidentes,
+  Salud, Vida Individual, Vida Inversión, FOLA, Decesos, Camposanto, Transporte
+  and Riesgos Generales. It also covers the Constancias SCTR / SCTR Minería / 
+  Vida Ley module (declaración, inclusión, manual, reemplazo, reimpresión,
+  anulación, mes vencido) and Inspección de Autos.
+
+  How one scenario runs
+
+  1. The TestNG data provider hands scenarios to threads. The dp.threads setting
+     controls how many (default 1; Jenkins uses 2).
+  2. Hooks.@Before sets up the screenshot sink, then DriverFactory.init()
+     creates a full Playwright instance, browser, context and page for that 
+     scenario, stored per thread. It also creates the Extent test.
+  3. Step classes get a PageProvider and a ScenarioContext through PicoContainer
+     and build their page objects in the constructor.
+  4. Page methods follow an action + UiSync.waitForAppIdle pattern: they wait
+     until the spinner is hidden and stays hidden for 250 ms. Harder transitions
+     use race utilities such as FirstAppearanceRace, which reports whether
+     error, success or timeout appeared first and stayed stable.
+  5. @After takes a screenshot on failure, then DriverManager.cleanup() and
+     clears the per-thread state.
+
+  CI pipeline (JenkinsCI)
+
+  1. Discover: a dry run of Cucumber with the chosen tags writes JSON, which is
+     turned into a list of feature:line entries.
+  2. Split: the list is cut into groups of 2, and each group gets its own 
+     Kubernetes pod, all running in parallel. Each pod runs 2 threads.
+  3. Per pod: runs the tests, removes  - #1 suffixes from JUnit test names (for
+     Octane), publishes JUnit, and stashes extent.json.
+  4. Merge: ExtentJsonMergeMain is run through exec:java. It merges every pod's
+     JSON into one Spark HTML report, which is then passed to publishHTML and
+     archived.
+
+  This is a well-designed setup: splitting across pods with a merged Extent
+  report is not common, and it scales well.
+
+  3. Strengths
+
+  - Clean layering: configuration, driver, pages, steps and reporting are
+    separate. The ArtifactSink interface stops src/main from depending on
+    Cucumber.
+  - Built to run in parallel: driver objects and Extent tests are stored per
+    thread, with scenario state injected by PicoContainer. ScenarioContext
+    documents why it is thread-safe.
+  - Modern locators: about 580 getByRole, 195 getByText and 83 getByLabel calls,
+    against only 27 XPath uses.
+  - Synchronization designed around the app: the spinner-wave plus quiet-period
+    approach and the first-appearance races fit an Angular app with many modals.
+  - Configuration follows 12-factor style: any key can be overridden with -D or
+    an environment variable.
+  - Rich evidence: screenshots inside each step node, named checkpoints, and a
+    readable console log with per-step timings.
+  - Living docs: the docsFeatures/*.md files describe each flow in business
+    terms.
+
+  4. Findings and risks (most important first)
+
+  🔴 High
+
+  1. Plain-text credentials and an internal URL in the repo. global.properties
+     contains user.email=WEBMASTER and user.password=Mapfre123.. Because
+     ConfigManager already accepts environment variables, the fix is to remove
+     these values and set USER_PASSWORD from a Jenkins credential. Treat this
+     password as exposed and rotate it. A second problem: LoginPage reads the
+     values through ConfigManager.getProperty, which skips the -D/ENV override.
+     It needs to switch to getGlobal for the override to work.
+  2. RandomData returns the same values every time. rnd() builds new 
+     Random(SeedManager.seed()) on every call, with the same seed per thread,
+     and SeedManager.clear() is never called. As a result, numeric(),
+     fullName(), randomPlate(), randomVehicleIdentificationNumber() and
+     randomEngineNumber() return the same value on every call in a thread, and 
+     in every later scenario on that thread. Two used-auto scenarios on one
+     thread would register the same plate, VIN and engine number. Fix: keep one
+     Random per thread and clear the seed in @After. idDocumentPeru is not
+     affected because it uses ThreadLocalRandom.
+  3. The runner hardcodes tags = "@riesgosgenerales". Running mvn test locally
+     without -Dcucumber.filter.tags runs only that one module. Jenkins always
+     passes tags, so CI works, but this is easy to miss.
+
+  🟠 Medium
+
+  4. Two screenshots per step. Hooks.@AfterStep and
+     ExtentCucumberStepsPlugin.onTestStepFinished both take a full screenshot
+     after every step, and ExtentEvidence.shot calls add more. This slows runs
+     and makes reports large (base64 images inside the JSON that gets merged).
+  5. A full Playwright instance and browser start for each scenario. This
+     isolates scenarios well but costs about 1–2 s per scenario. A lighter
+     option is one browser per thread with a new BrowserContext per scenario.
+  6. DriverManager.cleanup() is not exception-safe. If page.close() throws, the
+     browser and Playwright process leak and the per-thread values are never
+     removed.
+  7. ElementAsserts throws away the original error. It throws new 
+     AssertExceptions(message) without the cause, so the Playwright call log and
+     locator details are lost, which makes failures harder to diagnose.
+  8. Fixed waits and polling. There are 54 waitForTimeout calls, 2 Thread.sleep
+     in DocumentoSoatPage, and waitRandomBetween. clickMenuOption uses
+     JavaScript clicks plus 3.5 s of fixed waits.
+  9. JavaScript built by string concatenation. In clickMenuOption, '" + menuName
+     + "' breaks if a menu name contains a quote. Pass it as an evaluate
+     argument instead.
+  10. Broad exception handling. There are 143 catch (Exception …) blocks and 73
+      System.out.println calls that bypass SLF4J and the reports.
+
+  🟡 Low / maintainability
+
+  11. The step-definition style creates very long steps. Some steps take 16
+      parameters (for example the SCTR "Datos de la empresa" step). All 81
+      scenarios are Scenario Outlines, mostly with a single Examples row, and
+      there are no Background blocks even though every scenario starts with the
+      same login and navigation. Data tables or a data model would make steps
+      shorter and easier to reuse.
+  12. BasePage is a large catch-all (889 lines). It has many near-duplicate
+      helpers (fillInputIfEnabledAndSync, fillInputIfEnabledBlurAndSync,
+      fillInputValueIfEnabledAndEmptyAndSync…) and names mixing English and
+      Spanish (seleccionarOpcionPorTexto next to selectOptionByTextInsensitive).
+      Moving these into components (the components/material package is a good
+      start) and a small fluent API would help.
+  13. Inconsistent tags and naming. Tags include @regresion and @Regresion, and
+      the Jenkins default is @emisionsctr. There are typos in folder and step
+      names (contaciasSctrVidaLey, riegosgenerales, emsion, fomrulario, codgio,
+      valdiar), and some leftover files (Formato_trama_sctr - copia.xls).
+  14. Maven metadata is still placeholder. It shows groupId org.example,
+      artifactId playwright-project-try-02. There is no Maven Wrapper and no
+      dependency or plugin version enforcement. app.url.dev and app.url.prod
+      point to saucedemo.com, and implicitWait in driver.properties is never
+      used.
+  15. Hardcoded relative paths. TemplateFactory uses Paths.get("src/test/…"),
+      which ties runs to the working directory, even though TestResourceFiles
+      (classpath-based) already exists.
+  16. Report placement. ExtentJsonMergeMain and the reporting classes are in
+      src/test, while ArtifactSink is in src/main. This works, but the report
+      module is split across both. Duplicate or unused code:
+      ExtentCucumberStepsPlugin.onTestRunFinished and
+      ExtentLifecycleHooks.@AfterAll both flush, and SchedulingState is used by
+      only one step class.
+  17. No automated checks on the framework itself. There are no unit tests for
+      the utilities (races, DateUtils, RandomData), no static analysis
+      (Checkstyle, SpotBugs) and no README or CLAUDE.md. .gitignore exists, but
+      the folder here is not a git repository.
+
+  5. Recommended next steps
+
+  1. Remove the credentials from global.properties, rotate the password, and
+     switch LoginPage to getGlobal.
+  2. Fix RandomData/SeedManager: one Random per thread, with the seed cleared in
+     @After.
+  3. Remove the hardcoded tag from the runner, or default it to something
+     harmless like not @wip.
+  4. Take one screenshot per step (remove the duplicate @AfterStep capture) and
+     make cleanup() and ElementAsserts safer.
+  5. Move to one browser per thread and one context per scenario, and replace
+     fixed waits with state-based waits.
+  6. Refactor gradually: Background for login, shorter steps, split BasePage
+     into components, and one tagging convention.
+
+  I can turn this report into a shareable page if you want to pass it to your
+  team. I can also start fixing any of the high-priority items.
+
+✻ Churned for 2m 35s · done Wednesday, Sep 23, 5:08 PM
+
+※ recap: I analyzed your Playwright + Java framework for the MAPFRE OIM portal and wrote a detailed report with its stack, architecture, strengths and risks. Next, I'd fix the top issue: the plain-text credentials in global.properties. (disable recaps in /config)
+
+❯ let start fixing the top issues you categorized as High                       
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● User answered Claude's questions:
+  ⎿  · Once the hardcoded `@riesgosgenerales` tag is removed from 
+     RunnerCucumberTest, what should a plain `mvn test` run by default? (Any 
+     -Dcucumber.filter.tags value still overrides it.) → "not @wip"
+     · How should the pipeline supply the OIM login once it's gone from 
+     global.properties? I'd use Jenkins `withCredentials` to set USER_EMAIL / 
+     USER_PASSWORD for the test run. Is there a credential ID for this already? 
+     → Don't touch JenkinsCI
+     · For running from the IDE on your machine, how do you want to supply the 
+     credentials? → Git-ignored local file (Recommended)
+
+● Updated plan
+  ⎿  /plan to preview
+
+● User approved Claude's plan
+  ⎿  Plan saved to: 
+     C:\Users\luisb\.claude\plans\let-start-fixing-the-typed-river.md · /plan to
+     edit
+     Plan: fix the 3 High-severity findings
+
+     Context
+
+     The analysis report flagged three High issues:
+     1. Credentials in the repo. src/main/resources/global.properties contains
+        user.email=WEBMASTER / user.password=Mapfre123.. LoginPage also reads
+        them with ConfigManager.getProperty, which skips the -D/ENV override, so
+        the values can't be injected from outside.
+     2. RandomData repeats values. rnd() builds new Random(SeedManager.seed())
+        on every call. The seed is per thread and SeedManager.clear() is never
+        called, so every scenario on the same thread gets the same plate, VIN
+        and engine number (CotizacionAutoSteps:40-42). numeric(), fullName() and
+        uniqueSuffix() repeat on every call.
+     3. The runner hardcodes tags = "@riesgosgenerales", so a plain mvn test
+        runs only one module.
+
+     Decisions from the user: default tags = "not @wip"; do not modify 
+     JenkinsCI; local credentials come from a git-ignored
+     config/local/global.properties.
+
+     Changes
+
+     1. Credentials
+
+     - src/main/resources/global.properties: delete the user.email /
+       user.password values. Replace them with a comment that says how to supply
+       them: -Duser.email/-Duser.password, env USER_EMAIL/USER_PASSWORD, or
+       config/local/global.properties.
+     - src/main/java/com/mapfre/config/ConfigManager.java: in load(), after
+       loading the classpath global.properties, also load the optional file
+       config/local/global.properties, relative to the working directory (the
+       project root under Maven and IntelliJ). Use Files.exists →
+       Files.newBufferedReader(UTF_8), loaded into GLOBAL_PROPS so it overrides
+       the classpath values. It is skipped silently if absent. The priority
+       becomes -D > ENV > local file > classpath, and the existing overrideValue
+       logic is unchanged. config/local/ is already in .gitignore.
+     - src/main/java/com/mapfre/playwright/pageobjects/LoginPage.java: remove
+       the two field initializers. In loginOim(), read the values with
+       ConfigManager.getGlobal("user.email") / getGlobal("user.password"),
+       reusing the existing -D/ENV-aware getter. If either is blank, throw
+       FrameworkException with a Spanish message listing the 3 ways to supply
+       them. The check happens at login, not in the constructor, so steps that
+       only build the page don't fail.
+     - JenkinsCI is not touched. The user will inject USER_EMAIL/USER_PASSWORD
+       in Jenkins (for example with withCredentials). The password must be 
+       rotated: it is already in Bitbucket history and in target/classes.
+
+     2. Test-data randomness
+
+     - src/main/java/com/mapfre/utils/testdata/SeedManager.java: add a
+       ThreadLocal<Random> TL_RANDOM and a random() method that lazily creates
+       new Random(seed()). clear() removes both the seed and the Random.
+     - src/main/java/com/mapfre/utils/testdata/RandomData.java:
+       - uniqueSuffix(), numeric() and fullName() use SeedManager.random(), a
+         single stream per scenario, so each call returns a new value that can
+         still be reproduced from the seed.
+       - randomPlate(), randomVehicleIdentificationNumber() and
+         randomEngineNumber() keep the fresh new Random(seed) in a private
+         helper named correlatedRnd(), with a comment. Their existing comments
+         ("sincronizados con randomPlate") show the plate, VIN and engine number
+         are meant to share the first 6 characters, so this keeps that
+         behavior. Values now differ between scenarios because the seed is reset
+         per scenario.
+     - src/test/java/com/mapfre/test/hooks/Hooks.java:
+       - @Before: call SeedManager.clear(), then long seed = SeedManager.seed(),
+         and log it with ReportLogger.info("Data seed: " + seed + " (reproduce 
+         con -Ddata.seed=...)") after the Extent test exists.
+       - @After finally: add SeedManager.clear().
+       - With -Ddata.seed=N, every scenario reproduces the same data, which is
+         the behavior the existing SeedManager code intends.
+
+     3. Runner default tags
+
+     - src/test/java/com/mapfre/test/runner/RunnerCucumberTest.java: change tags
+       = "@riesgosgenerales" to tags = "not @wip". -Dcucumber.filter.tags still
+       overrides it (Cucumber gives properties priority over the annotation),
+       so Jenkins behaves the same.
+
+     Verification
+
+     1. mvn -B -q -o test-compile compiles.
+     2. Default tags: mvn -B -q -o test -Dcucumber.execution.dry-run=true 
+        -Dcucumber.plugin=json:target/dry.json finds all 81 scenarios, where it
+        previously found only the riesgosgenerales ones.
+        -Dcucumber.filter.tags=@riesgosgenerales still narrows the run.
+     3. RandomData: a scratchpad jshell script on target/classes checks that:
+        - two numeric(8) calls differ;
+        - after SeedManager.clear() a new plate differs;
+        - plate, VIN and engine still share their 6-character prefix;
+        - -Ddata.seed=42 gives the same plate across clear().
+     4. Credentials: grep confirms no password remains in src/. With nothing
+        set, loginOim() fails with the clear message; this can be checked with a
+        small ConfigManager.getGlobal call in jshell. With
+        USER_EMAIL/USER_PASSWORD set, or with config/local/global.properties,
+        getGlobal returns the values. A real login needs network access to
+        oim.pre.mapfre.com.pe, which the user can run with
+        -Dcucumber.filter.tags=@<small tag>.
+
+  Read 7 files (ctrl+o to expand)
+
+● Now applying the edits.
+
+● Update(src\main\resources\global.properties)
+  ⎿  Added 5 lines, removed 3 lines
+      13  
+      14  ui.screenshot.checkpoints.enabled=true
+      15  
+      16 -# Credenciales                                                 
+      17 -user.email=WEBMASTER                                           
+      18 -user.password=Mapfre123.                                       
+      16   No newline at end of file
+      17 +# Credenciales: NO versionar aqui. Definir user.email / user.pa
+         +ssword por una de estas vias                                   
+      18 +# (en orden de prioridad):                                     
+      19 +#   1) -Duser.email=... -Duser.password=...                    
+      20 +#   2) variables de entorno USER_EMAIL / USER_PASSWORD         
+      21 +#   3) archivo local config/local/global.properties (ignorado p
+         +or git)                                                        
+      22   No newline at end of file
+
+● Update(src\main\java\com\mapfre\config\ConfigManager.java)
+  ⎿  Added 16 lines
+       4  
+       5  import java.io.IOException;
+       6  import java.io.InputStream;
+       7 +import java.io.Reader;                                         
+       8 +import java.nio.charset.StandardCharsets;                      
+       9 +import java.nio.file.Files;                                    
+      10 +import java.nio.file.Path;                                     
+      11  import java.util.Properties;
+      12  
+      13  public final class ConfigManager {
+      14      private static final Properties DRIVER_PROPS = new Properti
+          es();
+      15      private static final Properties GLOBAL_PROPS = new Properti
+          es();
+      16 +    // Overrides locales opcionales (credenciales, etc.). La ca
+         +rpeta config/local/ esta en .gitignore                         
+      17 +    private static final Path LOCAL_GLOBAL_PROPS = Path.of("con
+         +fig", "local", "global.properties");                           
+      18      private static boolean loaded = false;
+      19  
+      20      private ConfigManager() {}
+     ...
+      23          if (loaded) return;
+      24          loadProps("driver.properties", DRIVER_PROPS);
+      25          loadProps("global.properties", GLOBAL_PROPS);
+      26 +        loadOptionalFile(LOCAL_GLOBAL_PROPS, GLOBAL_PROPS);    
+      27          loaded = true;
+      28      }
+      29  
+      30 +    private static void loadOptionalFile(Path file, Properties 
+         +target) {                                                      
+      31 +        if (!Files.isRegularFile(file)) return;                
+      32 +        try (Reader in = Files.newBufferedReader(file, Standard
+         +Charsets.UTF_8)) {                                             
+      33 +            target.load(in);                                   
+      34 +        } catch (IOException e) {                              
+      35 +            throw new FrameworkException("No se pudo cargar el 
+         +archivo local: " + file.toAbsolutePath(), e);                  
+      36 +        }                                                      
+      37 +    }                                                          
+      38 +                                                               
+      39      private static void loadProps(String resourceName, Properti
+          es target) {
+      40          try (InputStream in = ConfigManager.class.getClassLoade
+          r().getResourceAsStream(resourceName)) {
+      41              if (in == null) throw new FrameworkException("Archi
+          vo de recursos faltante: " + resourceName);
+
+● Write(src\main\java\com\mapfre\playwright\pageobjects\LoginPage.java)
+  ⎿  Added 13 lines, removed 4 lines
+      3  import com.microsoft.playwright.Locator;
+      4  import com.microsoft.playwright.Page;
+      5  import com.mapfre.config.ConfigManager;
+      6 +import com.mapfre.exceptions.FrameworkException;                
+      7  import com.microsoft.playwright.options.AriaRole;
+      8  
+      9  public class LoginPage extends BasePage {
+     ...
+      11      private final Locator usernameInput;
+      12      private final Locator passwordInput;
+      13      private final Locator loginButton;
+      13 -    String user = ConfigManager.getProperty("user.email");     
+      14 -    String passwordConfig = ConfigManager.getProperty("user.pas
+         -sword");                                                       
+      14  
+      15  
+      16      public LoginPage(Page page) {
+     ...
+      21      }
+      22  
+      23      public void loginOim() {
+      25 -        usernameInput.fill(user);                              
+      26 -        passwordInput.fill(passwordConfig);                    
+      24 +        usernameInput.fill(requiredCredential("user.email"));  
+      25 +        passwordInput.fill(requiredCredential("user.password"))
+         +;                                                              
+      26          clickAndSync(loginButton);
+      27      }
+      28  
+      29 +    private static String requiredCredential(String key) {     
+      30 +        String value = ConfigManager.getGlobal(key);           
+      31 +        if (value == null || value.isBlank()) {                
+      32 +            String envKey = key.toUpperCase().replace('.', '_')
+         +;                                                              
+      33 +            throw new FrameworkException("Falta la credencial '
+         +" + key + "'. Definirla con -D" + key + "=..., "               
+      34 +                    + "la variable de entorno " + envKey + " o 
+         +en config/local/global.properties");                           
+      35 +        }                                                      
+      36 +        return value;                                          
+      37 +    }                                                          
+      38  
+      39 +                                                               
+      40  }
+
+● Write(src\main\java\com\mapfre\utils\testdata\SeedManager.java)
+  ⎿  Added 20 lines, removed 2 lines
+       1  package com.mapfre.utils.testdata;
+       2  
+       3 +import java.util.Random;                                       
+       4  import java.util.concurrent.ThreadLocalRandom;
+       5  
+       6 +/**                                                            
+       7 + * Semilla de datos de prueba por escenario (por hilo).        
+       8 + * Hooks llama a {@link #clear()} al inicio y fin de cada escen
+         +ario, asi cada escenario obtiene                               
+       9 + * una semilla nueva. Con -Ddata.seed=N todos los escenarios re
+         +producen los mismos datos.                                     
+      10 + */                                                            
+      11  public final class SeedManager {
+      12      private static final ThreadLocal<Long> TL_SEED = new Thread
+          Local<>();
+      13 +    private static final ThreadLocal<Random> TL_RANDOM = new Th
+         +readLocal<>();                                                 
+      14  
+      15      private SeedManager() {}
+      16  
+     ...
+      20  
+      21          String prop = System.getProperty("data.seed");
+      22          long seed = (prop != null && !prop.isBlank())
+      16 -                ? Long.parseLong(prop)                         
+      23 +                ? Long.parseLong(prop.trim())                  
+      24                  : ThreadLocalRandom.current().nextLong();
+      25  
+      26          TL_SEED.set(seed);
+      27          return seed;
+      28      }
+      29  
+      30 +    /** Secuencia aleatoria unica del escenario: cada llamada a
+         +vanza la secuencia (valores distintos). */                     
+      31 +    public static Random random() {                            
+      32 +        Random r = TL_RANDOM.get();                            
+      33 +        if (r == null) {                                       
+      34 +            r = new Random(seed());                            
+      35 +            TL_RANDOM.set(r);                                  
+      36 +        }                                                      
+      37 +        return r;                                              
+      38 +    }                                                          
+      39 +                                                               
+      40      public static void clear() {
+      41          TL_SEED.remove();
+      42 +        TL_RANDOM.remove();                                    
+      43      }
+      26 -}                                                              
+      44   No newline at end of file
+      45 +}                                                              
+
+● Update(src\main\java\com\mapfre\utils\testdata\RandomData.java)
+  ⎿  Added 8 lines, removed 1 line
+       9      private RandomData() {}
+      10  
+      11      private static Random rnd() {
+      12 -        // reproducible per scenario if data.seed provided     
+      12 +        // secuencia compartida del escenario: cada llamada dev
+         +uelve un valor distinto,                                       
+      13 +        // reproducible si se pasa -Ddata.seed                 
+      14 +        return SeedManager.random();                           
+      15 +    }                                                          
+      16 +                                                               
+      17 +    private static Random correlatedRnd() {                    
+      18 +        // Random nuevo con la misma semilla del escenario: pla
+         +ca, VIN y numero de motor                                      
+      19 +        // comparten intencionalmente los primeros 6 caracteres
+         + dentro de un mismo escenario                                  
+      20          return new Random(SeedManager.seed());
+      21      }
+      22  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(src\test\java\com\mapfre\test\runner\RunnerCucumberTest.java)
+  ⎿  Added 1 line, removed 1 line
+      10                  "com.mapfre.test.stepdefinitions",
+      11                  "com.mapfre.test.hooks"
+      12          },
+      13 -        tags = "@riesgosgenerales",                            
+      13 +        tags = "not @wip", // default; -Dcucumber.filter.tags l
+         +o sobrescribe                                                  
+      14          plugin = {
+      15                  //"summary",
+      16                  "html:target/cucumber-reports/cucumber.html",
+
+● Now the Hooks changes.
+
+● Update(src\test\java\com\mapfre\test\hooks\Hooks.java)
+  ⎿  Added 5 lines
+      34  
+      35          ReportLogger.info("Scenario started: " + scenario.getNa
+          me());
+      36          scenarioContext.put("scenarioName", scenario.getName())
+          ;
+      37 +                                                               
+      38 +        // Semilla nueva de datos de prueba por escenario (evit
+         +a repetir placa/VIN/etc. en el mismo hilo)                     
+      39 +        SeedManager.clear();                                   
+      40 +        long seed = SeedManager.seed();                        
+      41 +        ReportLogger.info("Data seed: " + seed + " (reproducir 
+         +con -Ddata.seed=" + seed + ")");                               
+      42      }
+      43  
+      44      @AfterStep
+
+● Update(src\test\java\com\mapfre\test\hooks\Hooks.java)
+  ⎿  Added 1 line
+      70              DriverManager.cleanup();
+      71              ArtifactSinks.clear();
+      72              ExtentReportManager.clearTest();
+      73 +            SeedManager.clear();                               
+      74          }
+      75      }
+      76  }
+      77   No newline at end of file
+● Update(src\test\java\com\mapfre\test\hooks\Hooks.java)
+  ⎿  Added 1 line
+       6  import com.mapfre.reporting.ExtentReportManager;
+       7  import com.mapfre.reporting.ReportLogger;
+       8  import com.mapfre.test.reporting.CucumberExtentArtifactSink;
+       9 +import com.mapfre.utils.testdata.SeedManager;                  
+      10  import io.cucumber.java.*;
+      11  import io.cucumber.java.Scenario;
+      12  
+
+● Compiling and running the dry-run tag check:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Default tags now pick up all 81 scenarios, and the tag override narrows to 7.
+  The dry run exited 1, so I'm checking why:
+
+  Searched for 1 pattern, ran 2 shell commands (ctrl+o to expand)
+
+● That undefined step was already broken prior to my changes—no matching step
+  definition exists—so I'll leave it as is and note it at the end. Now checking
+  the randomness behavior.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● All randomness checks pass, and the environment-variable override works. One
+  more check for the local-file option:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I fixed all three High issues. The project compiles and every check passed.
+
+  ⚠️ Your Jenkins runs will fail at login until you add the credentials there.
+  The login no longer lives in the repo, and I didn't touch JenkinsCI, as you
+  asked. In Jenkins, provide USER_EMAIL and USER_PASSWORD to the mvn test step
+  in the pod stage, for example with withCredentials. Also rotate the WEBMASTER 
+  password. It is still in your Bitbucket history, and in target/classes until
+  the next clean build.
+
+  What changed
+
+  1. Credentials
+  - global.properties: the username and password are gone. A comment explains
+    the three ways to supply them.
+  - ConfigManager: now also reads an optional config/local/global.properties, if
+    it exists. That folder is already ignored by git, so it's the place for
+    your local credentials. The order of priority is: -D setting, then
+    environment variable, then the local file, then the file in the repo.
+  - LoginPage: reads the credentials through the lookup that respects -D and
+    environment variables. If one is missing, the login step fails with a clear
+    message listing the three options.
+
+  2. Repeating test data
+  - SeedManager: now keeps one random-number sequence per scenario, so each call
+    gives a new value, and clear() resets it.
+  - RandomData:
+    - numeric, fullName and uniqueSuffix now return a different value on each
+      call.
+    - Plate, VIN and engine number still share their first 6 characters within a
+      scenario. The original comments showed that was intended, so I kept it.
+  - Hooks: each scenario now starts with a new seed and clears it at the end.
+    The seed is written to the Extent report, so you can reproduce a run's data
+    with -Ddata.seed=<n>.
+
+  3. Runner default tag
+  - RunnerCucumberTest: the default is now "not @wip" instead of
+    @riesgosgenerales. Passing -Dcucumber.filter.tags still overrides it.
+
+  Checks I ran
+
+  - mvn test-compile succeeds.
+  - A dry run with no tags finds all 81 scenarios. With
+    -Dcucumber.filter.tags=@riesgosgenerales it finds 7.
+  - A small check program confirmed:
+    - two numeric() calls give different values;
+    - the plate changes between scenarios;
+    - plate, VIN and engine number still share their prefix;
+    - data.seed=42 reproduces the same values;
+    - the credentials are read from the environment variables and from the local
+      file, and the environment variable wins over the file.
+  - No password remains anywhere under src/.
+
+  I haven't run a real login against oim.pre.mapfre.com.pe. To try one, put your
+  credentials in config/local/global.properties and run a small tag.
+
+  Existing bug that the default run now shows
+
+  Scenario 37 in oim_emision_auto.feature (line 14, "Emisión Póliza Auto Nuevo …
+  Datos del Vehiculo ingresamos la frecuencia de uso…") uses a step that no
+  step definition matches. It was already broken; the old hardcoded tag just
+  kept it out of the default run. A plain mvn test will now report it as
+  undefined. It needs a step definition, or the step text needs to match an
+  existing one. I can look into it if you'd like.
+
+✻ Crunched for 2m 37s · done Wednesday, Sep 23, 6:05 PM
+
+※ recap: I analyzed your Playwright/Java framework and fixed the three High issues: credentials removed from the repo, repeating random test data, and the hardcoded runner tag. Next, add USER_EMAIL and USER_PASSWORD in Jenkins and rotate the WEBMASTER password. (disable recaps in /config)
+
+❯ where and how should I credentials in config/local/global.properties?         
+
+● Create the file at the project root, next to pom.xml, not under src/:
+
+  D:\workspace\playwright-real-draft-v3-claude\
+  ├─ pom.xml
+  ├─ JenkinsCI
+  ├─ config\
+  │  └─ local\
+  │     └─ global.properties   ← create this
+  └─ src\...
+
+  Contents: only the keys you want to override.
+
+  user.email=WEBMASTER
+  user.password=YourNewPasswordHere
+
+  To create it from PowerShell in the project root:
+
+  New-Item -ItemType Directory -Force config\local
+  @'
+  user.email=WEBMASTER
+  user.password=YourNewPasswordHere
+  '@ | Out-File -Encoding utf8 config\local\global.properties
+
+  Things to know:
+  - Working directory: the path is resolved from the directory the tests run in.
+    mvn test from the project root works. In IntelliJ, check that the run
+    configuration's Working directory is the project root. That's the default
+    for Maven and TestNG configurations, but if it points somewhere else the
+    file is silently skipped and login fails with the "Falta la credencial"
+    message.
+  - Format: standard Java .properties file, read as UTF-8, so characters like ñ
+    are fine.
+    - Write a backslash in the password as \\.
+    - Spaces after the value are kept, so don't leave any at the end of the
+      password line.
+  - Priority: a -Duser.password=... flag or a USER_PASSWORD environment variable
+    replaces the value in this file. If you set one in your IntelliJ run
+    configuration, that value is used instead of the file.
+  - Git: config/local/ is already in .gitignore, so the file won't be committed.
+    The folder isn't a git repo yet, so this only takes effect once it is.
+    After running git init, check with git status that the file doesn't appear.
+  - Other settings: the file can override any other global.properties key for
+    your machine only, such as env=qa or ui.spinner.timeoutMs.
+  - Password: use the rotated password, not the one that was in the repo.
+
+✻ Sautéed for 9s · done Wednesday, Sep 23, 6:14 PM
+
+❯ I still cannot understand. Where the user and password would come from to run 
+  tests in jenkins if config/local/global.properties is the ingore file? When   
+  you said "the file can override any other global.properties key for your      
+  machine only, such as env=qa or ui.spinner.timeoutMs" that means  my          
+  src/resources/global.properties is useless? When you should I write \\        
+  symbol, give me an example.                                                   
+
+● 1. Where Jenkins gets the user and password
+
+  Jenkins never sees config/local/global.properties. That file lives only on
+  your laptop. It isn't committed, so the Jenkins pods never have it.
+
+  Jenkins uses a different route: environment variables. ConfigManager already
+  checks an environment variable before any file:
+
+  ┌───────────────────────┬────────────────────────────────┐
+  │ Key the code asks for │ Environment variable it checks │
+  ├───────────────────────┼────────────────────────────────┤
+  │ user.email            │ USER_EMAIL                     │
+  ├───────────────────────┼────────────────────────────────┤
+  │ user.password         │ USER_PASSWORD                  │
+  └───────────────────────┴────────────────────────────────┘
+
+  So Jenkins has to store the credentials securely and set those two variables
+  when it runs mvn test. This takes two steps.
+
+  Step 1: create the credential in Jenkins (once, in the UI).
+  Go to Manage Jenkins → Credentials → (your folder or global) → Add 
+  Credentials:
+  - Kind: Username with password
+  - Username: WEBMASTER
+  - Password: the new password
+  - ID: oim-qa-login (any name works; you'll use it in step 2)
+
+  Step 2: wrap the mvn test in the pod stage of JenkinsCI with withCredentials.
+  Currently the pod stage has:
+
+  catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+    sh """
+      mvn -B -q test \
+        ...
+    """
+  }
+
+  It would become:
+
+  catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+    withCredentials([usernamePassword(credentialsId: 'oim-qa-login',
+                                      usernameVariable: 'USER_EMAIL',
+                                      passwordVariable: 'USER_PASSWORD')]) {
+      sh """
+        mvn -B -q test \
+          ...   (same flags as today)
+      """
+    }
+  }
+
+  Inside that block Jenkins sets USER_EMAIL and USER_PASSWORD, and hides the
+  password as **** in the console log. LoginPage picks them up automatically.
+  The Discover Scenarios and Merge stages don't log in, so they don't need it.
+
+  You asked me not to touch JenkinsCI, so I haven't made this change. I can add
+  it if you give me the credential ID you create.
+
+  Summary of where the credentials come from:
+  - Your laptop: config/local/global.properties, or environment variables if you
+    prefer.
+  - Jenkins: the Jenkins credential store, set as USER_EMAIL / USER_PASSWORD.
+  - The repo: nowhere.
+
+  2. src/main/resources/global.properties is still needed
+
+  It's still the main settings file that everyone uses, including Jenkins. The
+  local file doesn't replace it. It only overrides the specific keys you write
+  in it, and everything else still comes from global.properties.
+
+  For example, if your local file contains only:
+
+  user.email=WEBMASTER
+  user.password=Secret123
+
+  then the values your tests use are:
+
+  ┌────────────────┬────────────────────────────┬───────────────────────────┐
+  │      Key       │         Value used         │        Comes from         │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ env            │ qa                         │ src/main/resources/global │
+  │                │                            │ .properties               │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ app.url.qa     │ https://oim.pre.mapfre.com │ src/main/resources/global │
+  │                │ .pe/#/login                │ .properties               │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ ui.spinner.tim │ 120000                     │ src/main/resources/global │
+  │ eoutMs         │                            │ .properties               │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ user.email     │ WEBMASTER                  │ your local file           │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ user.password  │ Secret123                  │ your local file           │
+  └────────────────┴────────────────────────────┴───────────────────────────┘
+
+  Keep all shared, non-secret settings in global.properties. Put in the local
+  file only secrets, plus any personal tweak you don't want to affect your
+  teammates. For example, if you add ui.spinner.timeoutMs=200000 there, the
+  longer timeout applies on your laptop only.
+
+  3. When to write \\
+
+  In a .properties file a single \ is an escape character, so the file reader
+  removes it or changes what follows. You only need to care if your password 
+  contains a backslash.
+
+  Suppose your real password is Mapfre\2025.
+
+  ┌────────────────────────────┬─────────────────────────────┬──────────────┐
+  │ What you write in the file │   What the code actually    │   Correct?   │
+  │                            │          receives           │              │
+  ├────────────────────────────┼─────────────────────────────┼──────────────┤
+  │ user.password=Mapfre\2025  │ Mapfre2025 (the \           │ ❌ login     │
+  │                            │ disappears)                 │ fails        │
+  ├────────────────────────────┼─────────────────────────────┼──────────────┤
+  │ user.password=Mapfre\\2025 │ Mapfre\2025                 │ ✅           │
+  └────────────────────────────┴─────────────────────────────┴──────────────┘
+
+  Two more cases, less common:
+  - A space at the start of the password. Write user.password=\ abc to get  abc.
+  - A password ending in a backslash, like abc\. Write abc\\. A single \ at the
+    end of a line means "continue on the next line".
+
+  Characters like ., !, @, #, $, %, = or : in the middle of the password don't
+  need escaping. Your old password Mapfre123. could be written exactly as it
+  was.
+
+  These escaping rules apply only to the file. Environment variables in Jenkins
+  take the value exactly as typed, with no escaping.
+
+✻ Crunched for 16s · done Wednesday, Sep 23, 6:29 PM
+
+※ recap: We're fixing the High-risk issues from the framework analysis, and the credentials, test-data and default-tag fixes are done and verified. Next, you create the Jenkins credential and send me its ID so I can add `withCredentials` to JenkinsCI. (disable recaps in /config)
+
+❯ can export this whole chat in pdf or html document?                           
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Write(docs\chat-export.html)
+  ⎿  Wrote 331 lines to docs\chat-export.html
+       1 <!DOCTYPE html>
+       2 <html lang="en">
+       4 <meta charset="UTF-8">
+       5 <meta name="viewport" content="width=device-width, initial-scale
+         =1">
+       7 <style>
+       8   :root {
+       9     --bg: #ffffff; --fg: #1d2127; --muted: #5d6673; --border: #d
+      10     --user-bg: #eef4ff; --user-border: #9bb8f0; --ai-bg: #ffffff
+         ;
+     … +528 lines (ctrl+o to expand)
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Yes. I exported the conversation to both formats in a new docs\ folder in the
+  project:
+
+  - docs\chat-export.html: open it in any browser. It switches to a dark theme
+    if your system uses one.
+  - docs\chat-export.pdf: made by printing that HTML page with Microsoft Edge.
+    Edge confirmed it wrote the file (about 380 KB), but I couldn't open it here
+    to look at the pages, so check the layout when you open it.
+
+  What's in them:
+  - Your messages and my replies, in order: the analysis report, the fixes to
+    the High issues, the local credentials file, and the Jenkins,
+    global.properties and \\ answers.
+  - Tool activity (file reads, builds, checks) appears as a one-line summary per
+    turn, not the raw output.
+  - The earlier password value is replaced with …, so the exports don't copy the
+    old secret.
+
+  docs\ is inside the project folder, so delete it or add it to .gitignore if
+  you don't want it committed.
+
+  For a raw, word-for-word text transcript instead, type /export in Claude Code.
+  It saves the session to a file or copies it to the clipboard.
+
+✻ Cooked for 1m 31s · done Wednesday, Sep 23, 6:40 PM
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: D:\workspace\playwright-real-draft-v3-claude\docs
+     \2026-09-23-184243-i-want-you-to-analyze-the-project-it-is-an-autom.txt
+
+❯ I want to know how can I come back and load this whole conversation in a new  
+  session and continue talking?                                                 
+
+● Claude Code keeps every session on disk, so you can reopen this exact
+  conversation with its full history. The .txt file from /export is only a
+  readable copy and can't be loaded back as a session.
+
+  Resume this session
+
+  Open a terminal in the project folder, because sessions are listed per
+  directory:
+
+  cd D:\workspace\playwright-real-draft-v3-claude
+
+  Then pick one:
+
+  ┌──────────────────────┬──────────────────────────────────────────────────┐
+  │       Command        │                   What it does                   │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ claude --continue    │ Reopens the most recent session from this folder │
+  │ (or claude -c)       │  immediately.                                    │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ claude --resume (or  │ Lists past sessions from this folder so you can  │
+  │ claude -r)           │ choose one. This one starts with "I want you to  │
+  │                      │ analyze the project…".                           │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ /resume, typed       │                                                  │
+  │ inside a running     │ Same list, without restarting Claude Code.       │
+  │ session              │                                                  │
+  └──────────────────────┴──────────────────────────────────────────────────┘
+
+  In the desktop app or IDE extension, past sessions are listed in the session
+  history, and you can click one to continue it.
+
+  The session files are stored under
+  C:\Users\luisb\.claude\projects\D--workspace-playwright-real-draft-v3-claude\.
+  Deleting that folder deletes the history.
+
+  If you can't resume it
+
+  If the session is gone or you're on another machine, start a new session and
+  point me at the export:
+
+  Read 
+  docs\2026-09-23-184243-i-want-you-to-analyze-the-project-it-is-an-autom.txt, 
+  it's our previous conversation. Let's continue from there.
+
+  I'll read the file and pick up the context. It's plain text, so it works like
+  any other document.
+
+  For the long term
+
+  A resumed session carries the whole conversation, and a very long one gets
+  compacted over time. For facts you want in every future session, add them to a
+  CLAUDE.md file in the project root, which is loaded automatically each time.
+  Examples: "credentials come from config/local/global.properties or
+  USER_EMAIL/USER_PASSWORD" and "the default runner tag is not @wip". I can
+  create it with the key decisions from today.
+
+✻ Sautéed for 10s · done Wednesday, Sep 23, 6:44 PM
+
+❯ do it. create CLAUDE.md file in the project root with the whole information   
+
+● Write(CLAUDE.md)
+  ⎿  Wrote 96 lines to CLAUDE.md
+       1 # CLAUDE.md
+       3 Black-box UI test automation for **MAPFRE Perú's OIM portal** (`
+       4 The project contains no application code, only tests. The code i
+         s written in Java, but names, comments, Gherkin steps and error 
+       5 
+       7 - Java 17, Maven 3.9 (no wrapper). Playwright for Java 1.57, Cuc
+       8 - ExtentReports 5.1.2 (JSON per run + Spark HTML), Cucumber HTML
+         /JSON/JUnit, SLF4J simple.
+          commons-io/lang3.
+         ucket rep
+     … +166 lines (ctrl+o to expand)
+
+● I created CLAUDE.md in the project root. Claude Code loads it automatically at
+  the start of every session in this folder, so a new session begins with this
+  context even without resuming.
+
+  What it contains:
+  - Project overview: OIM black-box test suite, stack and versions, and the rule
+    to keep names and messages in Spanish.
+  - Commands: compiling, running by tag, parallel threads, dry run, reproducing
+    data with -Ddata.seed, and overriding browser settings.
+  - Configuration and credentials: the lookup priority, the local file for your
+    machine, USER_EMAIL/USER_PASSWORD for Jenkins, the note that JenkinsCI
+    doesn't inject them yet, and the reminder to rotate the password.
+  - Architecture and patterns to follow: step classes,
+    ScenarioContext/ScenarioKeys, page objects, synchronization, evidence
+    screenshots, the plate/VIN/engine prefix rule, and upload templates.
+  - The Jenkins pipeline, stage by stage.
+  - History and decisions (2026-09-23): the three High fixes, your choice not to
+    modify JenkinsCI for now, and where the exports are.
+  - Backlog: the undefined auto step, plus every Medium and Low finding from the
+    analysis.
+
+  It contains no passwords.
+
+  Update it as things change, for example after you add credentials to Jenkins
+  or fix a backlog item. You can edit it yourself or ask me to.
+
+✻ Sautéed for 37s · done Wednesday, Sep 23, 6:48 PM
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: D:\workspace\playwright-real-draft-v3-claude\docs
+     \2026-09-23-184857-i-want-you-to-analyze-the-project-it-is-an-autom.txt
+
+※ recap: We're hardening your OIM Playwright test framework: the three High fixes are done, and CLAUDE.md now records the project context. Next, add the USER_EMAIL and USER_PASSWORD credentials in Jenkins so the pipeline can log in again.
+❯ let start fixing the 7 Medium findings                                        
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+● I've mapped the 7 Medium findings, but two of them (#8 fixed waits, #10 broad
+  catches/println) span dozens of page objects whose timing I can't validate
+  without running against OIM—I need your input on scope before proceeding.
+
+● User answered Claude's questions:
+  ⎿  · Fixed waits (#8): there are 38 unconditional waitForTimeout calls in page
+     objects plus ~60 waitRandomBetween(…) calls (random 30–100% delay), mostly
+     in the Constancias pages. Replacing each with a real state-based wait 
+     changes timing against the live app, and I can't see the app from here. How
+     far should I go? → Framework-level only (Recommended)
+     · Can you run scenarios against oim.pre.mapfre.com.pe from this machine 
+     (network/VPN + config/local credentials)? If yes, I'd run one small tag per
+     changed area as verification. → We cannot run any test in this machine, 
+     the oim.pre.mapfre.com.pe access through vpn, this machine does not have 
+     access to.
+     · Driver reuse (#5): switch to one browser per thread with a fresh context 
+     per scenario. Keep an escape hatch? → Yes, add a flag (Recommended)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Updated plan
+  ⎿  /plan to preview
+
+● User approved Claude's plan
+  ⎿  Plan saved to: 
+     C:\Users\luisb\.claude\plans\let-start-fixing-the-typed-river.md · /plan to
+     edit
+     Plan: fix the 7 Medium findings
+
+     Context
+
+     This plan fixes the Medium findings from the 2026-09-23 analysis (see
+     CLAUDE.md → backlog). The goals are faster runs, lighter reports, better
+     failure diagnostics, and no leaked browsers.
+
+     User decisions:
+     - Fixed waits: framework level only. Page-by-page replacements go to the
+       backlog.
+     - No live runs. This machine has no VPN access to OIM, so verification uses
+       compilation, dry runs, and a local-browser smoke run against a data:
+       page. Browsers are installed in %LOCALAPPDATA%\ms-playwright.
+     - Driver reuse gets an escape hatch flag.
+
+     Findings I confirmed while exploring:
+     - The 2 Thread.sleep in DocumentoSoatPage are inside commented-out code, so
+       there's nothing to fix there.
+     - BasePage.clickMenuOption has no callers.
+     - The only evaluate that builds JavaScript by string concatenation is
+       clickMenuOption. The others (CotizacionPolizaAccidentesPage:407, SOAT,
+       Camposanto) already pass arguments or use constant scripts.
+
+     Changes
+
+     #4 One screenshot per step (feeds both reports)
+
+     - src/test/java/com/mapfre/reporting/ExtentReportManager.java: add
+       ThreadLocal<String> TL_LAST_STEP_SHOT with setLastStepScreenshot(String)
+       and takeLastStepScreenshot() (get + remove). clearTest() also clears it.
+     - ExtentCucumberStepsPlugin.onTestStepFinished: after capturing base64 (the
+       only capture), call ExtentReportManager.setLastStepScreenshot(base64).
+     - Hooks.afterStep: attach takeLastStepScreenshot() to the Cucumber scenario
+       if it's non-null, and don't take a second screenshot. Cucumber publishes
+       the step's TestStepFinished before running the @AfterStep hook, so the
+       cached image is always the current step's. Screenshot problems now go to
+       log.warn instead of ReportLogger.fail, so a failed screenshot no longer
+       marks the test FAIL.
+     - The failure screenshot in @After stays as it is (taken once, only on
+       failure).
+
+     #5 One browser per thread, one context per scenario (+ flag)
+
+     - src/main/resources/driver.properties: add browser.perScenario=false.
+     - ConfigManager: add isBrowserPerScenario(), which reads DRIVER_PROPS
+       through the existing get(...), so -Dbrowser.perScenario=true and the
+       BROWSER_PERSCENARIO env var work.
+     - DriverFactory.init():
+       - Reuse this thread's Playwright/Browser when it exists and
+         browser.isConnected(). Otherwise close any stale instances and create
+         new ones (the existing switch on browser name moves into a private
+         launchBrowser).
+       - Always create a new BrowserContext (BrowserOptions.contextOptions())
+         and Page, and set the default timeout.
+       - When perScenario=true, always create everything new, which is today's
+         behavior.
+     - DriverManager:
+       - Keep the four ThreadLocals and add setThreadBrowser(pw, browser) /
+         setScenario(ctx, page).
+       - Add a static ConcurrentLinkedQueue<Playwright> ALL that registers every
+         Playwright instance created.
+       - cleanup() closes the page and context. When perScenario, it also closes
+         the browser and Playwright and removes them from ALL.
+       - Add shutdownAll(), which drains ALL and closes each instance (closing
+         Playwright also closes its browsers).
+     - Hooks: add @AfterAll public static void closeBrowsers() { 
+       DriverManager.shutdownAll(); }. This is best effort. Playwright objects
+       are meant to be closed from the thread that created them, but at that
+       point the worker threads are idle, and in any case the Playwright driver
+       process ends when the JVM exits.
+
+     #6 Exception-safe cleanup
+
+     - In DriverManager.cleanup() and shutdownAll(), wrap each close() in its
+       own try/catch and log failures with SLF4J warn. ThreadLocals are always
+       removed in a finally, and cleanup never throws, so it can't hide the real
+       test failure.
+
+     #7 ElementAsserts keeps the original cause
+
+     - src/main/java/com/mapfre/asserts/ElementAsserts.java: every throw new 
+       AssertExceptions(msg) inside a catch (… e) becomes throw new 
+       AssertExceptions(msg, e). There are about 16 of these, and
+       AssertExceptions(String, Throwable) already exists.
+     - Methods that return a boolean, and throws outside a catch, stay
+       unchanged.
+     - The Extent fail(Throwable) output then includes the Playwright call log
+       under "Caused by".
+
+     #8 Fixed waits (framework level)
+
+     - BasePage.waitRandomBetween(long largestValueMs) has about 60 callers in
+       the Constancias pages. It becomes deterministic:
+       page.waitForTimeout(Math.round(largestValueMs * scale)), where scale
+       comes from the new global key ui.legacyWait.scale (default 1.0, read with
+       ConfigManager.getGlobal). Remove the random private overload.
+       - A scale of 1.0 keeps today's worst-case timing, so no new flakiness.
+         You can try -Dui.legacyWait.scale=0.5 on the VPN machine to speed up
+         runs.
+       - Add Javadoc marking it as a legacy wait that should be replaced with
+         state waits.
+     - BasePage.clickMenuOption (also #9): pass menuName as an evaluate
+       argument, replace the 1000 ms wait with a wait for the menu item locator
+       to be visible, and replace the 2500 ms wait with
+       UiSync.waitForAppIdle(page).
+     - Polling-loop intervals (pollMs, intervaloMs, the race utilities) stay.
+       They are legitimate. The 38 page-level sleeps and the checkbox/overlay
+       helpers stay too and are recorded in the CLAUDE.md backlog, to be done
+       module by module with VPN runs.
+
+     #9 JavaScript injection
+
+     - Covered by the clickMenuOption change in #8, which uses
+       page.evaluate("(name) => {...}", menuName).
+
+     #10 println and broad catches
+
+     - System.out.println → SLF4J in about 25 files:
+       - Page objects and components use the inherited log from BasePage.
+       - Other classes get private static final Logger log = 
+         LoggerFactory.getLogger(X.class): DebugLocatorUtils, StringUtils,
+         SearchResultsComponentForSctrActivity, the step classes, and
+         ExtentJsonMergeMain. Use info for normal output and debug for pure
+         debugging dumps.
+       - Commented-out prints are left alone.
+     - Rethrows without a cause (about 45): inside catch (… e), add e as the
+       cause when a new exception is thrown.
+     - Empty catches (15): review each one. When it's intentional best effort
+       (polling, optional modal), add log.debug("…", e) or a one-line comment.
+     - Exception types are not narrowed. That would change behavior I can't
+       verify against the app.
+
+     Housekeeping
+
+     - CLAUDE.md:
+       - Update the Medium section with what's done and what remains (page-level
+         sleeps, checkbox/overlay helpers).
+       - Document browser.perScenario and ui.legacyWait.scale.
+       - Note that each step has one screenshot.
+
+     Critical files
+
+     src/main/java/com/mapfre/playwright/driver/{DriverFactory,DriverManager}.ja
+     va, config/ConfigManager.java, resources/driver.properties,
+     resources/global.properties, asserts/ElementAsserts.java,
+     pageobjects/BasePage.java, src/test/java/com/mapfre/test/hooks/Hooks.java,
+     src/test/java/com/mapfre/reporting/{ExtentReportManager,ExtentCucumberSteps
+     Plugin}.java, plus the files touched mechanically for println and catch
+     changes (e.g. utils/debug/DebugLocatorUtils.java,
+     stepdefinitions/inspeccionAutos/DetalleSolicitudInspeccionAutosSteps.java,
+     pageobjects/poliza/auto/emsion/EmisionPolizaAutoNuevoPage.java).
+
+     Verification (no OIM access)
+
+     1. mvn -B -q -o test-compile passes. Grep shows no live System.out.println
+        in src/, and no AssertExceptions( thrown inside a catch without a cause.
+     2. The dry run still discovers 81 scenarios, confirming glue and hooks
+        load.
+     3. Local smoke run with a real browser, no OIM needed:
+        - Write a scratch feature and a step class in the scratchpad. The steps
+          open data:text/html,… pages and click a button. The feature has 4
+          scenarios.
+        - Run them through io.cucumber.core.cli.Main on the test classpath (from
+          mvn dependency:build-classpath), with glue com.mapfre.test.hooks +
+          scratch, the ExtentCucumberStepsPlugin plugin, and --threads 2.
+        - The run passes if:
+          - (a) all scenarios pass;
+          - (b) each thread launches its browser only once (seen in the logs, or
+            a counter in the scratch step via DriverManager.browser()
+            identity);
+          - (c) extent.json has exactly one screenshot per step, and
+            cucumber.json has one attachment per step;
+          - (d) no chromium processes remain after the run (tasklist).
+        - Repeat with -Dbrowser.perScenario=true to confirm the old behavior
+          still works.
+        - A scratch step that fails an ElementAsserts.assertVisible shows
+          "Caused by" in the Extent output.
+     4. Commands for you to run on the VPN machine: one small tag per area (e.g.
+        @emisionsctr, a Constancias tag), with and without
+        -Dbrowser.perScenario=true.
+
+● Starting with the driver layer (#5, #6).
+
+  Read 4 files (ctrl+o to expand)
+
+● Update(src\main\java\com\mapfre\config\ConfigManager.java)
+  ⎿  Added 6 lines
+      80          return Boolean.parseBoolean(get(DRIVER_PROPS, "maximize
+          ", "true"));
+      81      }
+      82  
+      83 +    // false (default): un navegador por hilo reutilizado entre
+         + escenarios, con contexto nuevo por escenario.                 
+      84 +    // true: Playwright + navegador nuevos en cada escenario (c
+         +omportamiento anterior).                                       
+      85 +    public static boolean isBrowserPerScenario() {             
+      86 +        return Boolean.parseBoolean(get(DRIVER_PROPS, "browser.
+         +perScenario", "false"));                                       
+      87 +    }                                                          
+      88 +                                                               
+      89      public static double getDefaultTimeoutMs() {
+      90          String v = get(DRIVER_PROPS, "pageLoadTimeout", "40000"
+          );
+      91          try {
+
+● Update(src\main\resources\driver.properties)
+  ⎿  Added 2 lines
+      2  headless=true
+      3  maximize=true
+      4  pageLoadTimeout=40000
+      5 +# false = un navegador por hilo reutilizado (contexto nuevo por 
+        +escenario); true = navegador nuevo por escenario                
+      6 +browser.perScenario=false                                       
+      7  #defaultTimeoutMs=40000
+      8  #se implementara un mentodo para la siguiente version
+      9  implicitWait=10
+      10  No newline at end of file
+
+● Write(src\main\java\com\mapfre\playwright\driver\DriverFactory.java)
+  ⎿  Added 23 lines, removed 14 lines
+       7  public final class DriverFactory {
+       8      private DriverFactory() {}
+       9  
+      10 +    /**                                                        
+      11 +     * Prepara el navegador del escenario actual.              
+      12 +     * Por defecto reutiliza el Playwright/Browser del hilo y c
+         +rea un BrowserContext + Page nuevos                            
+      13 +     * (aislamiento de cookies/storage por escenario). Con brow
+         +ser.perScenario=true crea todo nuevo.                          
+      14 +     */                                                        
+      15      public static void init() {
+      16          ConfigManager.load();
+      17  
+      13 -        Playwright pw = Playwright.create();                   
+      18 +        Browser browser = DriverManager.browser();             
+      19 +        boolean reusable = !ConfigManager.isBrowserPerScenario(
+         +) && browser != null && browser.isConnected();                 
+      20 +        if (!reusable) {                                       
+      21 +            DriverManager.closeThreadBrowser(); // descarta ins
+         +tancias previas/desconectadas del hilo                         
+      22 +            Playwright pw = Playwright.create();               
+      23 +            DriverManager.setThreadBrowser(pw, launchBrowser(pw
+         +));                                                            
+      24 +        }                                                      
+      25  
+      26 +        BrowserContext context = DriverManager.browser().newCon
+         +text(BrowserOptions.contextOptions());                         
+      27 +        Page page = context.newPage();                         
+      28 +        page.setDefaultTimeout(ConfigManager.getDefaultTimeoutM
+         +s());                                                          
+      29 +                                                               
+      30 +        DriverManager.setScenario(context, page);              
+      31 +    }                                                          
+      32 +                                                               
+      33 +    private static Browser launchBrowser(Playwright pw) {      
+      34          String browserName = ConfigManager.getBrowser();
+      35          BrowserType.LaunchOptions launchOptions = BrowserOption
+          s.launchOptions();
+      36  
+      18 -        Browser browser;                                       
+      37          switch (browserName) {
+      38              case "chromium":
+      39              case "chrome":
+      22 -                browser = pw.chromium().launch(launchOptions); 
+      23 -                break;                                         
+      40 +                return pw.chromium().launch(launchOptions);    
+      41              case "firefox":
+      25 -                browser = pw.firefox().launch(launchOptions);  
+      26 -                break;                                         
+      42 +                return pw.firefox().launch(launchOptions);     
+      43              case "webkit":
+      28 -                browser = pw.webkit().launch(launchOptions);   
+      29 -                break;                                         
+      44 +                return pw.webkit().launch(launchOptions);      
+      45              default:
+      46                  pw.close();
+      47                  throw new FrameworkException("Navegador no comp
+          atible: " + browserName);
+      48          }
+      34 -                                                               
+      35 -        BrowserContext context = browser.newContext(BrowserOpti
+         -ons.contextOptions());                                         
+      36 -        Page page = context.newPage();                         
+      37 -        page.setDefaultTimeout(ConfigManager.getDefaultTimeoutM
+         -s());                                                          
+      38 -                                                               
+      39 -        DriverManager.set(pw, browser, context, page);         
+      49      }
+      50  }
+
+● Write(src\main\java\com\mapfre\playwright\driver\DriverManager.java)
+  ⎿  Added 57 lines, removed 14 lines
+       1  package com.mapfre.playwright.driver;
+       2  
+       3 +import com.mapfre.config.ConfigManager;                        
+       4  import com.microsoft.playwright.*;
+       5 +import org.slf4j.Logger;                                       
+       6 +import org.slf4j.LoggerFactory;                                
+       7  
+       8 +import java.util.Queue;                                        
+       9 +import java.util.concurrent.ConcurrentLinkedQueue;             
+      10 +                                                               
+      11 +/**                                                            
+      12 + * Playwright/Browser viven por hilo (se reutilizan entre escen
+         +arios); BrowserContext/Page viven por escenario.               
+      13 + * Todos los Playwright creados se registran para cerrarlos al 
+         +final de la ejecucion con {@link #shutdownAll()}.              
+      14 + */                                                            
+      15  public final class DriverManager {
+      16 +    private static final Logger log = LoggerFactory.getLogger(D
+         +riverManager.class);                                           
+      17 +                                                               
+      18      private static final ThreadLocal<Playwright> TL_PLAYWRIGHT 
+          = new ThreadLocal<>();
+      19      private static final ThreadLocal<Browser> TL_BROWSER = new 
+          ThreadLocal<>();
+      20      private static final ThreadLocal<BrowserContext> TL_CONTEXT
+           = new ThreadLocal<>();
+      21      private static final ThreadLocal<Page> TL_PAGE = new Thread
+          Local<>();
+      22  
+      23 +    private static final Queue<Playwright> ALL_PLAYWRIGHTS = ne
+         +w ConcurrentLinkedQueue<>();                                   
+      24 +                                                               
+      25      private DriverManager() {}
+      26  
+      13 -    public static void set(Playwright pw, Browser br, BrowserCo
+         -ntext ctx, Page pg) {                                          
+      27 +    static void setThreadBrowser(Playwright pw, Browser br) {  
+      28          TL_PLAYWRIGHT.set(pw);
+      29          TL_BROWSER.set(br);
+      30 +        ALL_PLAYWRIGHTS.add(pw);                               
+      31 +    }                                                          
+      32 +                                                               
+      33 +    static void setScenario(BrowserContext ctx, Page pg) {     
+      34          TL_CONTEXT.set(ctx);
+      35          TL_PAGE.set(pg);
+      36      }
+     ...
+      40      public static BrowserContext context() { return TL_CONTEXT.
+          get(); }
+      41      public static Page page() { return TL_PAGE.get(); }
+      42  
+      43 +    /** Fin de escenario: cierra Page y Context. Nunca lanza ex
+         +cepcion (no debe ocultar el fallo real del test). */           
+      44      public static void cleanup() {
+      26 -        Page p = TL_PAGE.get();                                
+      27 -        if (p != null) p.close();                              
+      45 +        try {                                                  
+      46 +            closeQuietly("page", TL_PAGE.get());               
+      47 +            closeQuietly("context", TL_CONTEXT.get());         
+      48 +        } finally {                                            
+      49 +            TL_PAGE.remove();                                  
+      50 +            TL_CONTEXT.remove();                               
+      51 +        }                                                      
+      52 +        if (ConfigManager.isBrowserPerScenario()) {            
+      53 +            closeThreadBrowser();                              
+      54 +        }                                                      
+      55 +    }                                                          
+      56  
+      29 -        BrowserContext c = TL_CONTEXT.get();                   
+      30 -        if (c != null) c.close();                              
+      31 -                                                               
+      32 -        Browser b = TL_BROWSER.get();                          
+      33 -        if (b != null) b.close();                              
+      34 -                                                               
+      57 +    /** Cierra el Browser y Playwright del hilo actual (si exis
+         +ten). */                                                       
+      58 +    static void closeThreadBrowser() {                         
+      59          Playwright pw = TL_PLAYWRIGHT.get();
+      36 -        if (pw != null) pw.close();                            
+      60 +        try {                                                  
+      61 +            closeQuietly("browser", TL_BROWSER.get());         
+      62 +            closeQuietly("playwright", pw);                    
+      63 +        } finally {                                            
+      64 +            if (pw != null) ALL_PLAYWRIGHTS.remove(pw);        
+      65 +            TL_BROWSER.remove();                               
+      66 +            TL_PLAYWRIGHT.remove();                            
+      67 +        }                                                      
+      68 +    }                                                          
+      69  
+      38 -        TL_PAGE.remove();                                      
+      39 -        TL_CONTEXT.remove();                                   
+      40 -        TL_BROWSER.remove();                                   
+      41 -        TL_PLAYWRIGHT.remove();                                
+      70 +    /** Fin de la ejecucion: cierra todos los Playwright (y sus
+         + navegadores) de todos los hilos. */                           
+      71 +    public static void shutdownAll() {                         
+      72 +        Playwright pw;                                         
+      73 +        while ((pw = ALL_PLAYWRIGHTS.poll()) != null) {        
+      74 +            closeQuietly("playwright", pw);                    
+      75 +        }                                                      
+      76      }
+      77 +                                                               
+      78 +    private static void closeQuietly(String what, AutoCloseable
+         + closeable) {                                                  
+      79 +        if (closeable == null) return;                         
+      80 +        try {                                                  
+      81 +            closeable.close();                                 
+      82 +        } catch (Exception e) {                                
+      83 +            log.warn("No se pudo cerrar {}: {}", what, e.toStri
+         +ng());                                                         
+      84 +        }                                                      
+      85 +    }                                                          
+      86  }
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Now the screenshot de-duplication (#4) and the hooks.
+
+  Read 3 files (ctrl+o to expand)
+
+● Update(src\test\java\com\mapfre\reporting\ExtentReportManager.java)
+  ⎿  Added 2 lines
+      14  
+      15      private static final ThreadLocal<ExtentTest> TL_TEST = new 
+          ThreadLocal<>();
+      16      private static final ThreadLocal<ExtentTest> TL_STEP = new 
+          ThreadLocal<>();
+      17 +    // Screenshot del ultimo step (lo toma ExtentCucumberStepsP
+         +lugin y lo reutiliza Hooks.@AfterStep: una sola captura por ste
+         +p)                                                             
+      18 +    private static final ThreadLocal<String> TL_LAST_STEP_SHOT 
+         += new ThreadLocal<>();                                         
+      19  
+      20      private ExtentReportManager() {}
+      21  
+
+● Update(src\test\java\com\mapfre\reporting\ExtentReportManager.java)
+  ⎿  Added 10 lines
+      81          if (extent != null) extent.flush();
+      82      }
+      83  
+      84 +    public static void setLastStepScreenshot(String base64) { T
+         +L_LAST_STEP_SHOT.set(base64); }                                
+      85 +                                                               
+      86 +    /** Devuelve y limpia el screenshot del ultimo step (null s
+         +i no hay). */                                                  
+      87 +    public static String takeLastStepScreenshot() {            
+      88 +        String base64 = TL_LAST_STEP_SHOT.get();               
+      89 +        TL_LAST_STEP_SHOT.remove();                            
+      90 +        return base64;                                         
+      91 +    }                                                          
+      92 +                                                               
+      93      public static void clearTest() {
+      94          TL_STEP.remove();
+      95          TL_TEST.remove();
+      96 +        TL_LAST_STEP_SHOT.remove();                            
+      97      }
+      98  }
+      99   No newline at end of file
+
+● Update(src\test\java\com\mapfre\reporting\ExtentCucumberStepsPlugin.java)
+  ⎿  Added 1 line
+      69          try {
+      70              // Always attach screenshot after each step
+      71              String base64 = ScreenshotUtils.screenshotBase64();
+      72 +            ExtentReportManager.setLastStepScreenshot(base64); 
+         +// reutilizado por Hooks.@AfterStep (reporte Cucumber)         
+      73              var media = MediaEntityBuilder.createScreenCaptureF
+          romBase64String(base64).build();
+      74  
+      75              if (status == Status.PASSED) {
+
+● Update(src\test\java\com\mapfre\test\hooks\Hooks.java)
+  ⎿  Added 6 lines, removed 5 lines
+      44  
+      45      @AfterStep
+      46      public void afterStep(Scenario scenario) {
+      47 -        // Cucumber report screenshot after each step (as you r
+         -equested)                                                      
+      47 +        // Reutiliza la captura que ExtentCucumberStepsPlugin t
+         +omo al terminar el step (no se toma una segunda).              
+      48 +        // Cucumber publica TestStepFinished del step antes de 
+         +ejecutar este hook.                                            
+      49 +        String base64 = ExtentReportManager.takeLastStepScreens
+         +hot();                                                         
+      50 +        if (base64 == null) return;                            
+      51          try {
+      49 -            String base64 = com.mapfre.utils.ScreenshotUtils.sc
+         -reenshotBase64();                                              
+      50 -            byte[] screenshotBytes = java.util.Base64.getDecode
+         -r().decode(base64);                                            
+      51 -            scenario.attach(screenshotBytes, "image/png", "Step
+         - Screenshot");                                                 
+      52 +            scenario.attach(Base64.getDecoder().decode(base64),
+         + "image/png", "Step Screenshot");                              
+      53          } catch (Exception e) {
+      53 -            ReportLogger.fail("No se pudo capturar la pantalla 
+         -en el paso: " + e.getMessage());                               
+      54 +            log.warn("No se pudo adjuntar la captura del paso a
+         +l reporte Cucumber: {}", e.toString());                        
+      55          }
+      56      }
+      57  
+
+● Update(src\test\java\com\mapfre\test\hooks\Hooks.java)
+  ⎿  Added 5 lines, removed 3 lines
+      61              if (scenario.isFailed()) {
+      62                  // Keep Cucumber failure screenshot if you want
+      63                  try {
+      64 -                    String base64 = com.mapfre.utils.Screenshot
+         -Utils.screenshotBase64();                                      
+      65 -                    scenario.attach(java.util.Base64.getDecoder
+         -().decode(base64), "image/png", "failure-screenshot");         
+      66 -                } catch (Exception ignored) {}                 
+      64 +                    String base64 = ScreenshotUtils.screenshotB
+         +ase64();                                                       
+      65 +                    scenario.attach(Base64.getDecoder().decode(
+         +base64), "image/png", "failure-screenshot");                   
+      66 +                } catch (Exception e) {                        
+      67 +                    log.warn("No se pudo capturar la pantalla d
+         +el fallo: {}", e.toString());                                  
+      68 +                }                                              
+      69                  ReportLogger.fail("Scenario failed: " + scenari
+          o.getName());
+      70              } else {
+      71                  ReportLogger.pass("Scenario passed: " + scenari
+          o.getName());
+
+● Update(src\test\java\com\mapfre\test\hooks\Hooks.java)
+  ⎿  Added 6 lines
+      77              SeedManager.clear();
+      78          }
+      79      }
+      80 +                                                               
+      81 +    @AfterAll                                                  
+      82 +    public static void closeBrowsers() {                       
+      83 +        // Los navegadores se reutilizan por hilo entre escenar
+         +ios; se cierran al final de la ejecucion.                      
+      84 +        DriverManager.shutdownAll();                           
+      85 +    }                                                          
+      86  }
+      87   No newline at end of file
+
+● Update(src\test\java\com\mapfre\test\hooks\Hooks.java)
+  ⎿  Added 6 lines
+       6  import com.mapfre.reporting.ExtentReportManager;
+       7  import com.mapfre.reporting.ReportLogger;
+       8  import com.mapfre.test.reporting.CucumberExtentArtifactSink;
+       9 +import com.mapfre.utils.ScreenshotUtils;                       
+      10  import com.mapfre.utils.testdata.SeedManager;
+      11  import io.cucumber.java.*;
+      12  import io.cucumber.java.Scenario;
+      13 +import org.slf4j.Logger;                                       
+      14 +import org.slf4j.LoggerFactory;                                
+      15  
+      16 +import java.util.Base64;                                       
+      17 +                                                               
+      18  public class Hooks {
+      19 +    private static final Logger log = LoggerFactory.getLogger(H
+         +ooks.class);                                                   
+      20  
+      21      private final ScenarioContext scenarioContext;
+      22  
+
+● Now ElementAsserts (#7).
+
+  Read 1 file, ran 2 shell commands (ctrl+o to expand)
+
+● Update(src\main\java\com\mapfre\asserts\ElementAsserts.java)  ⎿  Added 1 line, removed 1 line
+      28                  assertThat(locator).isVisible();
+      29              } catch (Exception | AssertionError e) {
+      30                  // Transformamos el error técnico en una excepc
+          ión de negocio
+      31 -                throw new AssertExceptions(message + " - El ele
+         -mento no se hizo visible.");                                   
+      31 +                throw new AssertExceptions(message + " - El ele
+         +mento no se hizo visible.", e);                                
+      32              }
+      33          }
+      34  
+
+● Now the BasePage waits and the JS injection (#8, #9).
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(src\main\java\com\mapfre\playwright\pageobjects\BasePage.java)
+  ⎿  Added 32 lines, removed 34 lines
+      656      }
+      657  
+      658      public void clickMenuOption(String menuName) {
+      659 -        // Force the menu to fully render                     
+      660 -        page.evaluate(                                        
+      661 -                "() => { " +                                  
+      662 -                        "  const menu = document.querySelector
+          -('inspec-menu'); " +                                          
+      663 -                        "  if (menu) { " +                    
+      664 -                        "    menu.offsetHeight; " +  // Forces
+          - reflow/render                                                
+      665 -                        "  } " +                              
+      666 -                        "}"                                   
+      667 -        );                                                    
+      659 +        // Esperar a que la opcion exista en el DOM (en vez de
+          + una espera fija)                                             
+      660 +        page.locator("inspec-menu li.link a")                 
+      661 +                .filter(new Locator.FilterOptions().setHasText
+          +(menuName))                                                   
+      662 +                .first()                                      
+      663 +                .waitFor(new Locator.WaitForOptions().setState
+          +(WaitForSelectorState.ATTACHED));                             
+      664  
+      669 -        page.waitForTimeout(1000);                            
+      670 -                                                              
+      671 -        // Now try the click                                  
+      672 -        page.evaluate(                                        
+      673 -                "() => { " +                                  
+      665 +        // Click via JS: el nombre se pasa como argumento (no 
+          +se concatena dentro del script)                               
+      666 +        Object clicked = page.evaluate(                       
+      667 +                "(name) => { " +                              
+      668                          "  const menuItems = document.querySel
+           ectorAll('inspec-menu li.link a'); " +
+      675 -                        "  for (let item of menuItems) { " +  
+      676 -                        "    if (item.textContent.includes('" 
+          -+ menuName + "')) { " +                                       
+      677 -                        "      item.click(); " +              
+      678 -                        "      return; " +                    
+      679 -                        "    } " +                            
+      669 +                        "  for (const item of menuItems) { " +
+      670 +                        "    if (item.textContent.includes(nam
+          +e)) { item.click(); return true; } " +                        
+      671                          "  } " +
+      681 -                        "}"                                   
+      672 +                        "  return false; " +                  
+      673 +                        "}",                                  
+      674 +                menuName                                      
+      675          );
+      676 +        if (!Boolean.TRUE.equals(clicked)) {                  
+      677 +            throw new FrameworkException("No se encontró la op
+          +ción de menú: " + menuName);                                  
+      678 +        }                                                     
+      679  
+      680          page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+      685 -        page.waitForTimeout(2500);                            
+      681 +        UiSync.waitForAppIdle(page);                          
+      682  
+      683          log.info("{} menu clicked", menuName);
+      684      }
+      685  
+      686 +    /**                                                       
+      687 +     * Espera fija heredada (antes era aleatoria entre 30% y 1
+          +00% de largestValueMs).                                       
+      688 +     * Ahora es determinista: largestValueMs * ui.legacyWait.s
+          +cale (por defecto 1.0).                                       
+      689 +     * Pendiente: reemplazar cada uso por una espera de estado
+          + (locator visible, spinner, etc.).                            
+      690 +     */                                                       
+      691      public void waitRandomBetween(long largestValueMs) {
+      691 -        long smallestValueMs = (largestValueMs * 30) / 100;   
+      692 -        waitRandomBetween(smallestValueMs, largestValueMs);   
+      692 +        page.waitForTimeout(Math.round(largestValueMs * legacy
+          +WaitScale()));                                                
+      693      }
+      694  
+      695 -    private void waitRandomBetween(long smallestValueMs, long 
+          -largestValueMs) {                                             
+      696 -        if (smallestValueMs > largestValueMs) {               
+      697 -            throw new IllegalArgumentException(               
+      698 -                    "El valor mínimo (" + smallestValueMs + "m
+          -s) no puede ser mayor que el máximo (" + largestValueMs + "ms)
+          -"                                                             
+      699 -            );                                                
+      695 +    private static double legacyWaitScale() {                 
+      696 +        String value = ConfigManager.getGlobal("ui.legacyWait.
+          +scale");                                                      
+      697 +        if (value == null || value.isBlank()) return 1.0;     
+      698 +        try {                                                 
+      699 +            double scale = Double.parseDouble(value.trim());  
+      700 +            if (scale < 0) throw new NumberFormatException("ne
+          +gativo");                                                     
+      701 +            return scale;                                     
+      702 +        } catch (NumberFormatException e) {                   
+      703 +            throw new FrameworkException("Valor inválido para 
+          +ui.legacyWait.scale: " + value, e);                           
+      704          }
+      701 -                                                              
+      702 -        long range = largestValueMs - smallestValueMs + 1;    
+      703 -        long randomMs = smallestValueMs + (long) (Math.random(
+          -) * range);                                                   
+      704 -                                                              
+      705 -        //log.info("Esperando {} ms (rango: {} - {} ms)", rand
+          -omMs, smallestValueMs, largestValueMs);                       
+      706 -        page.waitForTimeout(randomMs);                        
+      705      }
+      706  
+      707      protected void uploadFile(Locator locator, Path filePath) 
+           {
+
+● Update(src\main\java\com\mapfre\playwright\pageobjects\BasePage.java)
+  ⎿  Added 1 line
+      1  package com.mapfre.playwright.pageobjects;
+      2  
+      3  import com.mapfre.asserts.ElementAsserts;
+      4 +import com.mapfre.config.ConfigManager;                         
+      5  import com.mapfre.config.EnvironmentConfig;
+      6  import com.mapfre.exceptions.AssertExceptions;
+      7  import com.mapfre.exceptions.FrameworkException;
+
+● Update(src\main\resources\global.properties)
+  ⎿  Added 3 lines
+      13  
+      14  ui.screenshot.checkpoints.enabled=true
+      15  
+      16 +# Escala de las esperas fijas heredadas (BasePage.waitRandomBet
+         +ween). 1.0 = espera completa; 0.5 = mitad                      
+      17 +ui.legacyWait.scale=1.0                                        
+      18 +                                                               
+      19  # Credenciales: NO versionar aqui. Definir user.email / user.pa
+          ssword por una de estas vias
+      20  # (en orden de prioridad):
+      21  #   1) -Duser.email=... -Duser.password=...
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Framework changes compile. Now #10: the println calls first.
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● The perl replacement put a literal newline inside the Java string. Fixing it:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the non-page classes that need their own logger.
+
+  Read 5 files, ran 1 shell command (ctrl+o to expand)
+
+● Remaining println hits are all inside /* */ blocks. Next, the rethrows that
+  drop the cause:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Only 11 real cases (the earlier ~45 was a rough grep). Fixing them by adding e
+  as the cause:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the 15 empty catch blocks:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Most are clearly deliberate best-effort (keyboard nudges, listener detach).
+  I'll add debug logging to the 5 page-object ones, where a silent swallow hides
+  why a fallback path ran:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Compiling and re-running the dry run:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Compiles cleanly and the dry run still finds all 81 scenarios, with the only
+  failure being the pre-existing undefined auto step. Now moving to a local
+  smoke run with a real browser, so first I need to get the test classpath.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Classpath ready. Writing the scratch smoke feature and steps (local setContent
+  pages, no OIM):
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Browser reuse is confirmed working, with both runs (perScenario true/false)
+  passing as expected. Now I'll verify the screenshot counts and confirm the
+  process check targets the right executable name.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● One screenshot per step in both reports (12 steps → 12 in Cucumber, 12 in
+  Extent), each from a single capture. Last check: the failing assertion keeps
+  its cause.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The Extent report now displays the Playwright failure cause under the business
+  message, and browser processes are cleaned up. Next, I'll update CLAUDE.md.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(CLAUDE.md)
+  ⎿  Added 2 lines
+      17  mvn -B test -Dcucumber.execution.dry-run=true -Dcucumber.plugin
+          =json:target/dry.json   # list/validate steps, no browser
+      18  mvn -B test ... -Ddata.seed=12345                          # re
+          produce the random test data of a run
+      19  mvn -B test ... -Dheadless=false -Dbrowser=firefox         # dr
+          iver.properties keys can be overridden with -D
+      20 +mvn -B test ... -Dbrowser.perScenario=true                 # fa
+         +ll back to a new Playwright+browser per scenario               
+      21 +mvn -B test ... -Dui.legacyWait.scale=0.5                  # sh
+         +orten the legacy fixed waits (default 1.0)                     
+      22  ```
+      23  Runner: `src/test/java/com/mapfre/test/runner/RunnerCucumberTes
+          t.java`. The default tag expression is `"not @wip"`, and `-Dcuc
+          umber.filter.tags` overrides it.
+      24  Reports go to `target/cucumber-reports/` and `target/extent-rep
+          orts/extent.json`. Add `-Dextent.spark.enabled=true` to also ge
+          t `index.html`, and use `-Dextent.out.dir` to change the output
+           folder.
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      24  Reports go to `target/cucumber-reports/` and `target/extent-rep
+          orts/extent.json`. Add `-Dextent.spark.enabled=true` to also ge
+          t `index.html`, and use `-Dextent.out.dir` to change the output
+           folder.
+      25  
+      26  ## Configuration and credentials
+      27 -- Files: `src/main/resources/driver.properties` (browser, headl
+         -ess, maximize, pageLoadTimeout) and `src/main/resources/global.
+         -properties` (env, `app.url.<env>`, spinner sync, checkpoints). 
+         -Both are the **shared baseline** for everyone, including CI.   
+      27 +- Files: `src/main/resources/driver.properties` (browser, headl
+         +ess, maximize, pageLoadTimeout, `browser.perScenario`) and `src
+         +/main/resources/global.properties` (env, `app.url.<env>`, spinn
+         +er sync, checkpoints, `ui.legacyWait.scale`). Both are the **sh
+         +ared baseline** for everyone, including CI.                    
+      28  - Lookup priority in `ConfigManager`: **`-Dkey` > env var `KEY_
+          UPPER_WITH_UNDERSCORES` > `config/local/global.properties` > cl
+          asspath `global.properties`**.
+      29  - **Credentials are never committed.** `user.email` / `user.pas
+          sword` are supplied by:
+      30    - Local: `config/local/global.properties` in the project root
+          , which is git-ignored and only needs the keys it overrides. It
+           uses Java properties syntax, so a backslash must be written as
+           `\\`.
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      36  ```
+      37  src/main/java/com/mapfre
+      38    config/              ConfigManager, EnvironmentConfig (app.ur
+          l.<env>)
+      39 -  playwright/driver/   DriverFactory (per scenario: Playwright+
+         -Browser+Context+Page), DriverManager (ThreadLocal), BrowserOpti
+         -ons                                                            
+      39 +  playwright/driver/   DriverFactory (browser per thread, reuse
+         +d; new Context+Page per scenario), DriverManager (ThreadLocals,
+         + cleanup, shutdownAll), BrowserOptions                         
+      40    playwright/pageobjects/  BasePage (shared helpers) + pages pe
+          r business area (poliza/*, constanciasSctrVidaLey/*, inspeccion
+          Autos/*)
+      41    playwright/components/   MaterialAutocomplete, MaterialDatePi
+          cker, SearchResults component
+      42    utils/               UiSync (spinner waves + quiet period), C
+          heckpoint, DownloadVsErrorRace, DateUtils, StringUtils
+
+● Update(CLAUDE.md)
+  ⎿  Added 4 lines, removed 1 line
+      59  - **Share data between steps** with `ScenarioContext.put/getStr
+          ing` using constants from `ScenarioKeys`. Never use static fiel
+          ds.
+      60  - **Page objects** extend `BasePage`. Define locators as `priva
+          te final Locator` fields in the constructor, and prefer `getByR
+          ole`/`getByLabel`/`getByText` over XPath.
+      61  - **Synchronization:** perform the action, then `UiSync.waitFor
+          AppIdle(page)`, or use the `*AndSync` helpers in `BasePage`. Fo
+          r "success or error?" transitions, use `FirstAppearanceRace` / 
+          `FirstDisappearanceRace` (the `processAndAssert...(timeoutMs, q
+          uietMs)` methods). Don't add new `waitForTimeout`/`Thread.sleep
+          `.
+      62 -- **Evidence:** `ExtentEvidence.shot("...")` in steps, `Checkpo
+         -int.capture("...")` from main code. Every step is also screensh
+         -otted automatically.                                           
+      62 +- **Evidence:** `ExtentEvidence.shot("...")` in steps, `Checkpo
+         +int.capture("...")` from main code. Every step is also screensh
+         +otted automatically, **once**: `ExtentCucumberStepsPlugin` take
+         +s the capture and `Hooks.@AfterStep` reuses it for the Cucumber
+         + report (`ExtentReportManager.takeLastStepScreenshot()`). Don't
+         + add another capture in hooks.                                 
+      63 +- **Driver lifecycle:** don't create or close Playwright/Browse
+         +r in steps or pages. `Hooks` calls `DriverFactory.init()` / `Dr
+         +iverManager.cleanup()` per scenario and `DriverManager.shutdown
+         +All()` in `@AfterAll`.                                         
+      64 +- **Errors:** when rethrowing inside a `catch`, always pass the
+         + caught exception as the cause (`new AssertExceptions(msg, e)`)
+         +. Use SLF4J (`log` from `BasePage`, or a `private static final 
+         +Logger`), never `System.out.println`.                          
+      65 +- **Legacy waits:** `BasePage.waitRandomBetween(ms)` is now a d
+         +eterministic wait of `ms * ui.legacyWait.scale`. Don't add new 
+         +callers.                                                       
+      66  - **Random data:** `RandomData.*`. The seed is reset per scenar
+          io in `Hooks` and logged to Extent as `Data seed: N`. Within on
+          e scenario, plate, VIN and engine number **intentionally share 
+          their first 6 characters** (`correlatedRnd()`). Keep that.
+      67  - **Upload templates:** copy and edit them with `testdata.Templ
+          ateFactory` + `ExcelXlsEditor` into `target/test-output/uploads
+          `.
+      68  
+
+● Update(CLAUDE.md)
+  ⎿  Added 19 lines
+       81  - The user asked **not to modify `JenkinsCI`** for now.
+       82  - A conversation export is in `docs/` (`chat-export.html/.pdf`
+            and the `/export` .txt).
+       83  
+       84 +## History and decisions (2026-09-25): Medium findings        
+       85 +- **One screenshot per step:** the plugin captures it and `@Af
+          +terStep` reuses it. A failed screenshot now logs a warning ins
+          +tead of marking the test FAIL.                                
+       86 +- **Browser reuse:**                                          
+       87 +  - Each thread launches one browser and reuses it, with a new
+          + `BrowserContext` per scenario.                               
+       88 +  - `browser.perScenario=true` restores the old behavior.     
+       89 +  - Browsers close in `Hooks.@AfterAll`.                      
+       90 +- **Safe cleanup:** `cleanup()` / `shutdownAll()` close each r
+          +esource separately, log failures, never throw, and always remo
+          +ve the ThreadLocals.                                          
+       91 +- **`ElementAsserts` keeps the cause:** every `AssertException
+          +s` thrown from a catch carries the Playwright error.          
+       92 +- **`waitRandomBetween`** is deterministic and scaled by `ui.l
+          +egacyWait.scale`.                                             
+       93 +- **`clickMenuOption`:**                                      
+       94 +  - Passes the menu name as an `evaluate` argument, so there's
+          + no JS injection.                                             
+       95 +  - Waits for the item instead of 1 s, and waits for app idle 
+          +instead of 2.5 s.                                             
+       96 +  - Throws if the item is not found. It has no callers today. 
+       97 +- **Logging and exceptions:**                                 
+       98 +  - Live `System.out.println` calls were replaced with SLF4J. 
+       99 +  - 11 rethrows now pass the cause.                           
+      100 +  - 4 silent catches in SOAT/Accidentes pages now `log.debug` 
+          +the reason.                                                   
+      101 +- **Verification:** there is no OIM access from the dev machin
+          +e (VPN only). The changes were verified with compilation, a dr
+          +y run (81 scenarios), and a local Cucumber smoke run with real
+          + Chromium (thread reuse, per-scenario flag, screenshot counts,
+          + "Caused by" in Extent, no leftover browser processes). They s
+          +till need to be run on a VPN machine.                         
+      102 +                                                              
+      103  ## Known issues / backlog
+      104  - **Undefined step:** `features/poliza/auto/oim_emision_auto.f
+           eature` line 14 ("en la pagina Emisión Póliza Auto Nuevo compl
+           etamos el formulario Datos del Contratante en la seccion Datos
+            del Vehiculo ingresamos la frecuencia de uso ..."). No step d
+           efinition matches it, so a default run reports it as UNDEFINED
+           .
+      105  - Medium:
+
+● Update(CLAUDE.md)
+  ⎿  Added 4 lines, removed 8 lines
+      102  
+      103  ## Known issues / backlog
+      104  - **Undefined step:** `features/poliza/auto/oim_emision_auto.f
+           eature` line 14 ("en la pagina Emisión Póliza Auto Nuevo compl
+           etamos el formulario Datos del Contratante en la seccion Datos
+            del Vehiculo ingresamos la frecuencia de uso ..."). No step d
+           efinition matches it, so a default run reports it as UNDEFINED
+           .
+      105 -- Medium:                                                     
+      106 -  - Two screenshots per step (`Hooks.@AfterStep` + `ExtentCucu
+          -mberStepsPlugin`).                                            
+      107 -  - A full Playwright and browser start per scenario (better: 
+          -one browser per thread, one context per scenario).            
+      108 -  - `DriverManager.cleanup()` is not exception-safe.          
+      109 -  - `ElementAsserts` drops the original cause.                
+      110 -  - 54 `waitForTimeout`, `Thread.sleep` in `DocumentoSoatPage`
+          -.                                                             
+      111 -  - JS string concatenation in `BasePage.clickMenuOption`.    
+      112 -  - 143 broad `catch (Exception)`, 73 `System.out.println`.   
+      105 +- Medium (remaining; needs VPN runs module by module):        
+      106 +  - Replace the ~60 `waitRandomBetween(...)` calls (mostly Con
+          +stancias pages) and ~38 page-level `waitForTimeout` sleeps wit
+          +h state waits (locator visible/hidden, `UiSync.waitForAppIdle`
+          +).                                                            
+      107 +  - Checkbox and overlay helpers in `BasePage` (`clickCheckBox
+          +List`, `dismissAnyOverlay`) still use short fixed waits.      
+      108 +  - Broad `catch (Exception)` blocks are still broad. Only the
+          + cause and logging were fixed; exception types were not narrow
+          +ed.                                                           
+      109  - Low:
+      110    - Very long steps (up to 16 params), single-row Scenario Out
+           lines, no `Background` for login.
+      111    - `BasePage` has ~890 lines with near-duplicate helpers.
+
+● I fixed the 7 Medium findings. Two of them were only partly fixed, because the
+  rest needs test runs against OIM. I checked everything I could without VPN
+  access: the project compiles, the dry run still finds all 81 scenarios, and I
+  ran a small test suite with a real Chromium browser against local pages.
+  Nothing has been run against OIM yet.
+
+  What changed
+
+  #: 4
+  Finding: Two screenshots per step
+  Fix: The Extent plugin now takes the only screenshot, and @AfterStep reuses it
+
+  for the Cucumber report. If a screenshot fails, it now logs a warning instead
+   of marking the test FAIL.
+  ────────────────────────────────────────
+  #: 5
+  Finding: New Playwright and browser for every scenario
+  Fix: Each thread now launches one browser and reuses it, with a fresh context
+  (cookies and storage) for each scenario. Browsers are closed at the end of
+  the run. -Dbrowser.perScenario=true brings back the old behavior.
+  ────────────────────────────────────────
+  #: 6
+  Finding: Unsafe cleanup
+  Fix: Each close now runs on its own, logs a warning if it fails, and never
+  throws. The per-thread state is always cleared.
+  ────────────────────────────────────────
+  #: 7
+  Finding: ElementAsserts lost the original error
+  Fix: All 16 checks now pass the Playwright error as the cause.
+  ────────────────────────────────────────
+  #: 8
+  Finding: Fixed waits (framework part only, as agreed)
+  Fix: waitRandomBetween (about 60 calls) is no longer random. It waits the full
+
+  time, scaled by ui.legacyWait.scale (default 1.0). In clickMenuOption, the
+  fixed 1 s and 2.5 s waits became waits for the menu item and for the app to
+  be idle.
+  ────────────────────────────────────────
+  #: 9
+  Finding: JavaScript built by string concatenation
+  Fix: clickMenuOption now passes the menu name as an argument, and throws if
+  the
+  item doesn't exist. It was the only such case, and nothing calls it today.
+  ────────────────────────────────────────
+  #: 10
+  Finding: println calls and swallowed errors
+  Fix: Every System.out.println still in use now goes through SLF4J. The rest
+  are
+  in commented-out code. 11 rethrows now keep the original cause, and 4 silent
+  catch blocks in the SOAT and Accidentes pages now log why they were hit.
+
+  Local test results (Chromium, 2 threads, no OIM)
+
+  - Browser reuse: each thread used one browser for its 2 scenarios. With
+    browser.perScenario=true, there were 4 browsers, same as before.
+  - Screenshots: 12 steps gave exactly 12 screenshots in the Cucumber report and
+    12 in the Extent report, each from a single capture.
+  - Error cause: a failing assertion shows Caused by: … Locator expected to be 
+    visible in the Extent report.
+  - Cleanup: no Chromium processes were left running after either mode.
+
+  Still left
+
+  - The roughly 60 waitRandomBetween calls and 38 page-level waitForTimeout
+    calls still need to be replaced with waits on actual page state, one module
+    at a time, with VPN test runs.
+  - The checkbox and overlay helpers in BasePage still use short fixed waits.
+  - Broad catch (Exception) blocks are still broad. Narrowing them could change
+    behavior I can't check from here.
+
+  All of this is in the CLAUDE.md backlog, along with the new settings and
+  rules.
+
+  Please run these on a machine with VPN access
+
+  mvn -B test -Dcucumber.filter.tags="@emisionsctr"
+  mvn -B test -Dcucumber.filter.tags="@constanciamanual" -Ddp.threads=2
+  mvn -B test -Dcucumber.filter.tags="@constanciamanual"
+  -Dbrowser.perScenario=true
+  If they pass, you can try -Dui.legacyWait.scale=0.5 on the Constancias tags to
+  cut some wait time. If anything breaks with browser reuse,
+  -Dbrowser.perScenario=true goes back to the old behavior while we look into
+  it.
+
+✻ Cooked for 8m 30s · done Friday 4:22 PM
+
+※ recap: All High and Medium fixes to your OIM Playwright framework are in, and they compile and pass a local browser test with Chromium. Next, run the `@emisionsctr` and `@constanciamanual` tags on a machine with VPN access to confirm they work against OIM.
+
+❯ explain visually, what is the difference between new playwright and browser   
+  for every scenario now, and how it was before.                                
+
+● Playwright has four layers. Each one is cheaper to create than the one above
+  it:
+
+  Playwright   = the driver process (Node.js) that talks to browsers      ~0.5–1
+  s to start
+    └─ Browser     = a real Chromium process                              ~0.5–1
+  s to launch
+         └─ BrowserContext = an isolated "incognito" session               
+  ~10–50 ms
+              (its own cookies, localStorage, login session)
+              └─ Page      = a tab inside that session                     ~few 
+  ms
+
+  The change is about which layers are thrown away after each scenario.
+
+  Before: everything recreated for every scenario
+
+  Example: 4 scenarios on 2 threads (dp.threads=2).
+
+  Thread 1                                   Thread 2
+  ────────────────────────────────           ────────────────────────────────
+  Scenario A                                  Scenario B
+   ┌ start Playwright  (driver) ┐              ┌ start Playwright  (driver) ┐
+   │ launch Chromium            │              │ launch Chromium            │
+   │  └ Context + Page          │              │  └ Context + Page          │
+   │     ...login, steps...     │              │     ...login, steps...     │
+   └ close ALL of it ───────────┘              └ close ALL of it ───────────┘
+  Scenario C                                  Scenario D
+   ┌ start Playwright  (again)  ┐              ┌ start Playwright  (again)  ┐
+   │ launch Chromium   (again)  │              │ launch Chromium   (again)  │
+   │  └ Context + Page          │              │  └ Context + Page          │
+   └ close ALL of it ───────────┘              └ close ALL of it ───────────┘
+
+  Total: 4 drivers + 4 Chromium launches  →  4 × (~1–2 s startup)
+
+  Now: browser kept per thread, fresh session per scenario
+
+  Thread 1                                   Thread 2
+  ────────────────────────────────           ────────────────────────────────
+   start Playwright + launch Chromium  (once)   start Playwright + launch 
+  Chromium  (once)
+   ║                                            ║
+   ║ Scenario A                                 ║ Scenario B
+   ║  ┌ new Context + Page ┐                     ║  ┌ new Context + Page ┐
+   ║  │ ...login, steps... │                     ║  │ ...login, steps... │
+   ║  └ close Context ─────┘                     ║  └ close Context ─────┘
+   ║ Scenario C                                 ║ Scenario D
+   ║  ┌ new Context + Page ┐                     ║  ┌ new Context + Page ┐
+   ║  │ ...login, steps... │                     ║  │ ...login, steps... │
+   ║  └ close Context ─────┘                     ║  └ close Context ─────┘
+   ║                                            ║
+   end of run (@AfterAll): close Playwright + Chromium for all threads
+
+  Total: 2 drivers + 2 Chromium launches, no matter how many scenarios
+
+  The ║ line is the browser staying alive. Only the context (the box) is created
+  and destroyed per scenario.
+
+  Is it still isolated?
+
+  Yes. Isolation between scenarios comes from the context, not the browser. A
+  new context is like opening a new incognito window:
+
+  Chromium (shared by the thread)
+   ├─ Context of Scenario A  → cookies A, login A, storage A   ← closed at end 
+  of A
+   └─ Context of Scenario C  → starts EMPTY: no cookies, no login from A
+
+  So Scenario C can't see Scenario A's login or data. It still logs in from
+  scratch, exactly as before.
+
+  Side by side
+
+  ┌───────────────┬───────────┬───────────────┬────────────────────────────┐
+  │               │  Before   │ Now (default) │ -Dbrowser.perScenario=true │
+  ├───────────────┼───────────┼───────────────┼────────────────────────────┤
+  │ Playwright    │ new per   │ 1 per thread  │ new per scenario           │
+  │ driver        │ scenario  │               │                            │
+  ├───────────────┼───────────┼───────────────┼────────────────────────────┤
+  │ Chromium      │ new per   │ 1 per thread, │ new per scenario           │
+  │ process       │ scenario  │  reused       │                            │
+  ├───────────────┼───────────┼───────────────┼────────────────────────────┤
+  │ Context       │ new per   │ new per       │                            │
+  │ (cookies,     │ scenario  │ scenario      │ new per scenario           │
+  │ session)      │           │               │                            │
+  ├───────────────┼───────────┼───────────────┼────────────────────────────┤
+  │ Page (tab)    │ new per   │ new per       │ new per scenario           │
+  │               │ scenario  │ scenario      │                            │
+  ├───────────────┼───────────┼───────────────┼────────────────────────────┤
+  │ Startup cost, │ ~80       │               │                            │
+  │  80 scenarios │ launches  │ ~2 launches   │ ~80 launches               │
+  │  on 2 threads │           │               │                            │
+  ├───────────────┼───────────┼───────────────┼────────────────────────────┤
+  │               │ end of    │ context: end  │                            │
+  │ When closed   │ each      │ of scenario.  │ end of each scenario       │
+  │               │ scenario  │ Browser: end  │                            │
+  │               │           │ of run        │                            │
+  └───────────────┴───────────┴───────────────┴────────────────────────────┘
+
+  Safety nets
+
+  - Browser crash: if a thread's browser crashes or disconnects, the next
+    scenario on that thread notices (browser.isConnected() is false) and
+    launches a new one.
+  - Different browser per scenario: needed only if you suspect browser-level
+    state leaks, such as a stuck download dialog or memory growth over a very
+    long run. Run with -Dbrowser.perScenario=true and it behaves exactly like
+    the "Before" diagram.
+
+  In the Jenkins setup, each pod runs 2 scenarios on 2 threads, so every pod
+  launched 2 browsers before and still launches 2. The saving there is small.
+  The gain is on bigger local runs, or if you later put more scenarios in each
+  pod.
+
+✻ Baked for 17s · done Friday 4:30 PM
+
+❯ argument why did you proponed make a change in creating one driver and        
+  browser to run 2 scenarios compared to creating one driver, browser, context  
+  and page as before configuration?                                             
+
+● The honest answer is that the benefit is real but smaller than calling it a
+  "Medium" finding suggested. For your Jenkins setup specifically, it's close to
+  zero.
+
+  Why I proposed it
+
+  1. It's the model Playwright itself recommends.
+  Playwright's own test runner (Playwright Test) works this way: one browser per
+  worker process, a new BrowserContext per test. The context was designed to be
+  the isolation unit, "an incognito profile that costs milliseconds". Launching
+  a whole browser per test is the pattern Playwright moved away from. Aligning
+  with the recommended model means fewer surprises when upgrading, and matches
+  the docs and examples your team will read.
+
+  2. It removes repeated startup cost.
+  Every scenario used to pay for starting the Node.js driver and launching
+  Chromium: about 1–2 s, plus a CPU and memory spike. In a local run of all 81
+  scenarios on 2 threads, that's about 80 launches instead of 2, saving roughly
+  1.5–2.5 minutes.
+
+  3. It reduces load on the machine.
+  Starting Chromium is the heaviest moment for CPU and memory. Doing it once per
+  thread instead of once per scenario gives steadier resource use. That matters
+  on shared Kubernetes pods with CPU limits, where launch spikes can slow down
+  the scenario running next to it.
+
+  Why the benefit is smaller than it sounds
+
+  1. Your scenarios are long, so startup is a tiny share.
+  An OIM flow (login, forms, uploads, issuing a policy with 40–300 s timeouts)
+  takes minutes. Saving 1–2 s out of, say, 3 minutes is about 1%.
+
+  2. In your Jenkins pipeline it changes nothing.
+  I should correct my earlier answer, where I said the Jenkins saving is
+  "small". It is zero:
+
+  JenkinsCI: chunkByTwo → 2 scenarios per pod, HILOS_DE_EJECUCION=2 → 2 threads 
+  per pod
+
+  Pod 1:  Thread 1 → Scenario A   (only scenario on this thread)
+          Thread 2 → Scenario B   (only scenario on this thread)
+
+  Each thread runs exactly one scenario, so there is nothing to reuse. Before
+  and after, each pod launches 2 browsers. Reuse only matters when a thread runs
+  2 or more scenarios: local runs, or if you ever put more scenarios per pod or
+  lower the thread count.
+
+  What it costs (the risks I accepted)
+
+  Risk: Session data leaking between scenarios
+  Before: impossible
+  Now: practically impossible
+  How it's handled: Each scenario gets a new context: separate cookies, storage
+  and cache. Verified locally.
+  ────────────────────────────────────────
+  Risk: Browser crash affecting the next scenario
+  Before: impossible
+  Now: possible
+  How it's handled: browser.isConnected() check relaunches a dead browser.
+  ────────────────────────────────────────
+  Risk: Memory growth in a long-lived browser
+  Before: none
+  Now: small, over long runs
+  How it's handled: Contexts are closed each time. Only relevant for very long
+  local runs.
+  ────────────────────────────────────────
+  Risk: Closing browsers from another thread
+  Before: not needed
+  Now: @AfterAll closes them from the main thread
+  How it's handled: Best effort. The JVM exit ends the driver process anyway. No
+
+  leftover processes locally.
+  ────────────────────────────────────────
+  Risk: Behavior change not validated against OIM
+  Before: none
+  Now: not yet validated on VPN
+  How it's handled: -Dbrowser.perScenario=true restores the old behavior
+  exactly.
+
+  My recommendation
+
+  Neither option is clearly wrong, so it comes down to how much you value "zero
+  behavior change until validated":
+
+  - Keep the new default if you run bigger suites locally or plan to put more
+    scenarios per pod. It's the recommended Playwright model, and CI behaves the
+    same either way.
+  - Make browser.perScenario=true the default (a one-line change in
+    driver.properties) if you want no behavior change until someone validates it
+    on the VPN machine. You lose nothing in Jenkins today.
+
+  A more useful speed improvement for your pipeline would be the fixed waits.
+  About 60 waitRandomBetween calls averaging ~1 s each, plus the page-level
+  sleeps, add far more time per scenario than browser startup ever did.
+
+  Do you want me to switch the default to browser.perScenario=true, or keep it
+  as is?
+
+✻ Baked for 21s · done Friday 4:53 PM
+
+※ recap: We're hardening your OIM Playwright framework; the High and Medium fixes are done, and I just explained why browser reuse gives little benefit in Jenkins. Next, decide whether to make `browser.perScenario=true` the default or keep reuse.
+
+❯ are you telling me that your model it is suitable for my project? This is     
+  project is run in Jenkins running 2 scenarios in parallel. What I still do    
+  not understand is how it will run in Jenkins now? what do you call worker?    
+  Why do you say each thread runs exactly one scenario, it should not be like   
+  that?                                                                         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Your pipeline doesn't work the way my earlier suggestion assumed, and you're
+  right to push back.
+
+  How Jenkins runs your tests (unchanged by my edit)
+
+  Parallelism in your project comes from two levels, both defined in JenkinsCI
+  and pom.xml:
+
+  Jenkins build (e.g. TAGS=@emisionsctr → 6 scenarios found in dry run)
+  │
+  ├─ Pod 1 ── mvn test -Dcucumber.features=A,B  -Ddp.threads=2
+  │            TestNG DataProvider pool (2 threads)
+  │              ├─ Thread 1 → Scenario A ─┐ run at the same time
+  │              └─ Thread 2 → Scenario B ─┘
+  │
+  ├─ Pod 2 ── mvn test -Dcucumber.features=C,D  -Ddp.threads=2
+  │              ├─ Thread 1 → Scenario C
+  │              └─ Thread 2 → Scenario D
+  │
+  └─ Pod 3 ── mvn test -Dcucumber.features=E,F  -Ddp.threads=2
+                 ├─ Thread 1 → Scenario E
+                 └─ Thread 2 → Scenario F
+
+  - Level 1 (pods): the pipeline's chunkByTwo gives each pod exactly 2
+    feature:line entries. All 81 of your scenarios are single-row Scenario
+    Outlines, so each entry is exactly one scenario.
+  - Level 2 (threads): HILOS_DE_EJECUCION=2 → -Ddp.threads=2 → Surefire's
+    dataproviderthreadcount → 2 TestNG threads in that pod, running the pod's 2
+    scenarios simultaneously.
+
+  2 scenarios per pod ÷ 2 threads per pod = 1 scenario per thread. That's what
+  "2 scenarios in parallel" means in your setup, and it is correct and intended.
+  Nothing is wrong with it.
+
+  What I meant by "worker"
+
+  "Worker" is a term from Playwright's own JavaScript test runner (a process
+  that runs tests one after another). In your project, the equivalent is a 
+  TestNG DataProvider thread. I shouldn't have used a term your project doesn't
+  use.
+
+  What changes in Jenkins with my edit: nothing observable
+
+  Before                                   Now (browser.perScenario=false)
+  Thread 1: Playwright+Chromium            Thread 1: Playwright+Chromium
+            Context+Page → Scenario A                Context+Page → Scenario A
+            close everything                         close Context+Page
+                                                     (Chromium stays open, but 
+  the thread
+                                                      has no more scenarios)
+                                                     @AfterAll → close Chromium
+
+  Same number of browsers (2 per pod), same isolation, same timing. The only
+  difference is when Chromium is closed: at the end of the scenario before, at
+  the end of the run now. A browser is reused only when one thread runs 2 or 
+  more scenarios in sequence, which in your setup happens only in local runs
+  (e.g. 81 scenarios with dp.threads=2).
+
+  Is the model suitable for your project?
+
+  It's harmless but not useful for your CI. It adds code paths (per-thread
+  reuse, @AfterAll shutdown, the flag) for a benefit you get only locally. I
+  recommended it by the general Playwright best practice without first checking
+  that your pipeline gives every thread exactly one scenario. That was my
+  mistake.
+
+● User declined to answer questions
+  ⎿  · Given that Jenkins runs 1 scenario per thread, what do you want to do 
+     with the browser-reuse change? (Default to per-scenario (Recommended) / 
+     Revert reuse completely / Keep as is)
+
+● User answered Claude's questions:
+  ⎿  · What would you like to clarify before deciding what to do with the 
+     browser-reuse change? → I want to know how parallelism works. Also I 
+     understood that you gathered what was best based on playwright 
+     recommendation, however I presumed you did not consider the project current
+     reality. Therefore, I have got confused if my project structure and 
+     Jenkins pipeline are suitable, reliable and approachable built. I 
+     understand there are larger approaches how a project might be built based 
+     on intended goals, infraestructures or resources a company or person 
+     assumed in a particular moment.
+
+● You're right: I recommended browser reuse from Playwright's general best
+  practice without first checking your pipeline. Here is how parallelism
+  actually works in your project, then my assessment of whether the project and
+  pipeline are sound.
+
+  1. How parallelism works, level by level
+
+  LEVEL 0  Jenkins build            1 build = 1 TAGS expression
+           │
+           │ Stage "Discover Scenarios" (1 pod)
+           │   mvn test -Dcucumber.execution.dry-run=true → 
+  cucumber-discovery.json
+           │   → list of "feature:line" (1 entry = 1 scenario in your project)
+           │   → chunkByTwo → [[A,B],[C,D],[E,F]]
+           │
+  LEVEL 1  Pods (Kubernetes)        one pod per chunk, ALL pods start at the 
+  same time
+           │                        (parallel branches in JenkinsCI)
+           ├─ pod-1: git checkout + mvn test -Dcucumber.features=A,B 
+  -Ddp.threads=2
+           ├─ pod-2: git checkout + mvn test -Dcucumber.features=C,D 
+  -Ddp.threads=2
+           └─ pod-3: ...
+                  │
+  LEVEL 2  Threads inside one pod (inside one JVM)
+                  │  Surefire → TestNG → RunnerCucumberTest.scenarios()
+                  │  @DataProvider(parallel = true) returns 1 row per scenario: 
+  [A, B]
+                  │  TestNG thread pool of size dataproviderthreadcount (= 
+  dp.threads = 2)
+                  ├─ Thread 1 ── runScenario(A)
+                  └─ Thread 2 ── runScenario(B)      ← A and B run 
+  simultaneously
+                          │
+  LEVEL 3  One scenario on one thread
+                          Cucumber creates a PicoContainer JUST for this 
+  scenario:
+                            ScenarioContext, PageProvider, step classes, Hooks
+                          @Before → DriverFactory.init() → 
+  Playwright/Browser/Context/Page in ThreadLocal
+                          steps → pages use DriverManager.page() of THIS thread
+                          @After → cleanup
+                          Extent test/step nodes also in ThreadLocal → no mixing
+  between A and B
+                  │
+  LEVEL 4  Reports
+           each pod writes its extent.json + JUnit → stash
+           Stage "Merge Final Report": ExtentJsonMergeMain joins all extent.json
+  → 1 HTML
+
+  Why the scenarios don't interfere with each other:
+  - Across pods: they are separate machines and JVMs. Nothing is shared except
+    the application under test.
+  - Across threads in one pod: everything scenario-specific is either per-thread
+    (Playwright objects, Extent test, random seed) or per-scenario (the
+    PicoContainer objects). That's the part of your framework that is well
+    designed.
+
+  How many threads end up with more than one scenario:
+
+  ┌───────────────────────────┬────────────┬──────────┬────────────────────┐
+  │      Jenkins setting      │ Scenarios  │ Threads  │   Scenarios per    │
+  │                           │  per pod   │ per pod  │       thread       │
+  ├───────────────────────────┼────────────┼──────────┼────────────────────┤
+  │ Default                   │ 2          │ 2        │ 1 → no browser     │
+  │ (HILOS_DE_EJECUCION=2)    │            │          │ reuse possible     │
+  ├───────────────────────────┼────────────┼──────────┼────────────────────┤
+  │                           │            │          │ 2, one after the   │
+  │ HILOS_DE_EJECUCION=1      │ 2          │ 1        │ other → reuse      │
+  │                           │            │          │ would help         │
+  │                           │            │          │ slightly           │
+  ├───────────────────────────┼────────────┼──────────┼────────────────────┤
+  │ HILOS_DE_EJECUCION=3 or   │ 2          │ 3+       │ 1 → the extra      │
+  │ more                      │            │          │ threads sit idle   │
+  ├───────────────────────────┼────────────┼──────────┼────────────────────┤
+  │ Local, all 81 scenarios,  │ 81         │ 2        │ ~40 → reuse helps  │
+  │ dp.threads=2              │            │          │                    │
+  └───────────────────────────┴────────────┴──────────┴────────────────────┘
+
+  chunkByTwo always gives each pod 2 scenarios, whatever value you pass in
+  HILOS_DE_EJECUCION.
+
+  2. Is your project structure and pipeline suitable?
+
+  Yes. The architecture is sound, and it's a legitimate design choice for your 
+  constraints. You chose to scale out with many small pods instead of a few big
+  machines running many threads. For long UI flows against a shared QA
+  environment, that's a reasonable choice:
+  - a crash or hang affects only 2 scenarios;
+  - pods use little memory;
+  - Kubernetes spreads the load;
+  - the merged Extent report hides the fragmentation.
+
+  The things I'd call genuinely good:
+  - per-thread and per-scenario isolation in the framework;
+  - dry-run discovery, which only creates the pods needed;
+  - one merged report at the end;
+  - catchError(UNSTABLE), so one failing pod doesn't kill the build;
+  - JUnit name clean-up for Octane.
+
+  Where it's worth thinking, framed as trade-offs rather than defects:
+
+  Aspect: Cost per pod
+  Current reality: Each pod does git checkout + a full Maven compile to run 2
+  scenarios
+  Consequence: Startup overhead per pod (Maven, JVM, dependencies) is probably
+  much larger than browser startup
+  Worth it?: Only if build time matters. Caching ~/.m2 or a shared build helps.
+  ────────────────────────────────────────
+  Aspect: chunkByTwo is fixed at 2
+  Current reality: The HILOS_DE_EJECUCION parameter suggests it's tunable, but
+  only values 1 and 2 make sense
+  Consequence: Confusing parameter
+  Worth it?: Small fix: chunk by HILOS_DE_EJECUCION
+  ────────────────────────────────────────
+  Aspect: Shared test data across parallel pods
+  Current reality: Fixed RUCs in Examples (e.g. 20454617186); a hardcoded
+  request
+  number "153991" in DetalleSolicitudInspeccionAutosSteps
+  Consequence: Two scenarios using the same RUC or record at the same time can
+  collide in the application
+  Worth it?: Biggest reliability risk with high parallelism
+  ────────────────────────────────────────
+  Aspect: One login user for everything
+  Current reality: Every pod logs in as the same WEBMASTER user at the same time
+  Consequence: If OIM limits concurrent sessions per user, parallel runs could
+  log each other out
+  Worth it?: Worth confirming with the OIM team
+  ────────────────────────────────────────
+  Aspect: Branch fallback
+  Current reality: If RAMA doesn't exist, the pipeline silently runs master
+  Consequence: You may test a different branch than you think
+  Worth it?: Visible only in the build description
+
+  None of these make the design wrong. Your structure matches your goals: many
+  independent long scenarios, shared Kubernetes infrastructure, and one readable
+  report. The improvements that would really matter for reliability are about
+  test data isolation between parallel scenarios and confirming concurrent 
+  logins. Browser startup is not one of them.
+
+  3. What this means for the browser-reuse change
+
+  Because of the table in section 1, the change has no effect in your Jenkins 
+  today (1 scenario per thread). It only helps local bulk runs, or
+  HILOS_DE_EJECUCION=1. So it's safe, but adds complexity for little benefit in
+  CI.
+
+● User declined to answer questions
+  ⎿  · Now that the parallelism model is clear (Jenkins = 1 scenario per 
+     thread), what do you want to do with the browser-reuse change? (Default to 
+     per-scenario (Recommended) / Revert reuse completely / Keep as is)
+     · Do you also want me to plan fixes for any of the pipeline trade-offs 
+     above? (JenkinsCI stays untouched unless you pick those items.) (Chunk by 
+     HILOS param / Test data collisions / None for now)
+
+● User answered Claude's questions:
+  ⎿  · What would you like to clarify before we decide on the browser-reuse 
+     change or the pipeline items? → I want to know how parallelism would work 
+     after the implementation. Also I want to know about test data collisions 
+     shared login, chunk size, per-pod cost or branch fallback
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Here is how parallelism works with the change I made, and then each pipeline
+  point with the evidence I found in your repo.
+
+  1. Parallelism after my change (what Jenkins does now)
+
+  Nothing in JenkinsCI or pom.xml changed, so the layout is identical: pods × 2
+  threads × 1 scenario each. The only difference is inside each thread:
+
+  Pod 1 (1 JVM, dp.threads=2), timeline →
+
+  BEFORE my change
+  Thread 1: [start PW+Chromium][ctx+page][ Scenario A ...... ][close ctx, page, 
+  Chromium, PW]
+  Thread 2: [start PW+Chromium][ctx+page][ Scenario B .......... ][close ctx, 
+  page, Chromium, PW]
+                                                                        JVM ends
+
+  AFTER my change (browser.perScenario=false)
+  Thread 1: [start PW+Chromium][ctx+page][ Scenario A ...... ][close ctx, page]
+  Thread 2: [start PW+Chromium][ctx+page][ Scenario B .......... ][close ctx, 
+  page]
+                                                                   @AfterAll: 
+  close Chromium ×2, PW ×2
+                                                                        JVM ends
+
+  Same number of browsers, same parallelism, same isolation. The only difference
+  is that Chromium closes a few seconds later, at @AfterAll instead of at the
+  end of each scenario.
+
+  If the chunk size followed HILOS_DE_EJECUCION (one of the pipeline options
+  below), with 4 scenarios per pod and 2 threads:
+
+  Thread 1: [start PW+Chromium][ctx][ Scenario A ][close ctx][ctx][ Scenario C 
+  ][close ctx]
+  Thread 2: [start PW+Chromium][ctx][ Scenario B ][close ctx][ctx][ Scenario D 
+  ][close ctx]
+                                                                @AfterAll: close
+  browsers
+
+  Only in that layout, or with HILOS_DE_EJECUCION=1, does reuse save anything,
+  and even then only about 1–2 s per scenario.
+
+  2. The pipeline trade-offs, explained
+
+  a) Test data collisions (the most important one for reliability)
+
+  Scenarios that run at the same time, in different pods or threads, work on the
+  same shared QA database. If two of them use the same business record, one can
+  change it under the other. What I found in the features:
+
+  Data: Policy 7012600002906
+  Used by: oim_constancia_inclusion_sctr_mineria.feature and
+  oim_constancia_ver_detalle_anulacion_recibo_sctr_mineria.feature
+  Risk if they run at the same time: One adds workers to the policy while the
+  other reads or annuls its receipts, so each can see a state the other changed
+  ────────────────────────────────────────
+  Data: RUC 20558476462
+  Used by: oim_cotizacion_fola.feature and oim_emision_fola.feature
+  Risk if they run at the same time: Two quotes for the same company at the same
+
+  time; lower risk (quotes are usually independent), depends on OIM rules
+  ────────────────────────────────────────
+  Data: RUC 20410478180
+  Used by: 6 scenarios in oim_cotizacion_riesgos_generales.feature
+  Risk if they run at the same time: Likely placed in the same or adjacent pods,
+
+  so they run simultaneously
+  ────────────────────────────────────────
+  Data: Request "153991" (hardcoded in Java)
+  Used by: DetalleSolicitudInspeccionAutosSteps:38 and
+  InspeccionAutosSolicitudesSteps:20
+  Risk if they run at the same time: Two scenarios booking an inspection slot on
+
+  the same request, so "slot not available" failures are possible
+
+  The typical symptom is flaky failures that pass on re-run. Typical fixes:
+  - give each scenario its own data;
+  - generate data (as the SCTR short-period flow already does with random DNIs);
+  - tag conflicting scenarios so they never share a run (e.g. @serial, run in a
+    separate build).
+
+  b) Shared login
+
+  Every pod logs in as WEBMASTER at the same moment. If OIM allows only one
+  active session per user, logging in on pod 2 could invalidate the session on
+  pod 1. Symptoms would be a random redirect to login, or "sesión expirada", in
+  the middle of a scenario. I can't verify this from the code; it's an OIM rule.
+  Ask the OIM team, or look at failed builds for mid-scenario logouts. If it's
+  a problem, the fix is a small pool of test users (one per thread or pod),
+  injected through the credentials mechanism we set up.
+
+  c) Chunk size
+
+  chunkByTwo is hardcoded to 2, but HILOS_DE_EJECUCION is a free parameter:
+  - HILOS=2: each thread gets 1 scenario. Balanced, the current default.
+  - HILOS=1: 2 scenarios per pod, run one after the other. Slower, but fewer
+    simultaneous logins.
+  - HILOS=3 or more: still 2 scenarios per pod, so the extra threads do nothing.
+    The parameter looks tunable, but it isn't.
+
+  Fix: chunk by HILOS_DE_EJECUCION (a one-line change in JenkinsCI). Then
+  "threads per pod" really controls "scenarios per pod".
+
+  d) Cost per pod
+
+  Each pod runs git checkout → mvn test, which compiles the project and loads
+  dependencies, just to run 2 scenarios:
+
+  pod lifetime ≈ pod scheduling + checkout + Maven startup/compile (+ dependency
+  download if no cache)
+               + JVM start + Chromium launch + scenario time
+
+  For a 3-minute scenario this overhead is probably 30–90 s per pod, much more
+  than browser startup. It's not a defect. It's the price of maximum isolation
+  and parallelism. You could reduce it with:
+  - a Maven repository cache in the pod image or a volume;
+  - compiling once in the discovery pod and stashing target/;
+  - more scenarios per pod (which is where the chunk size comes back in).
+
+  e) Branch fallback
+
+  In "Discover Scenarios", if the RAMA branch doesn't exist or isn't accessible,
+  the pipeline echoes a warning and runs master instead. The build doesn't
+  fail. A typo in the branch name silently tests master, and the result looks
+  valid. Fix: fail the build instead of falling back, or mark it UNSTABLE with a
+  clear description.
+
+  Summary of priorities:
+
+  ┌──────────────────┬────────────────────────────┬─────────────────────────┐
+  │       Item       │          Affects           │        Priority         │
+  ├──────────────────┼────────────────────────────┼─────────────────────────┤
+  │ Test data        │ Reliability (flaky         │ High                    │
+  │ collisions       │ failures)                  │                         │
+  ├──────────────────┼────────────────────────────┼─────────────────────────┤
+  │ Shared login     │ Reliability (if OIM limits │ High, but needs         │
+  │                  │  sessions)                 │ confirming first        │
+  ├──────────────────┼────────────────────────────┼─────────────────────────┤
+  │ Branch fallback  │ Trust in results           │ Medium, easy fix        │
+  ├──────────────────┼────────────────────────────┼─────────────────────────┤
+  │ Chunk size       │ Parameter clarity /        │ Low–medium, easy fix    │
+  │                  │ flexibility                │                         │
+  ├──────────────────┼────────────────────────────┼─────────────────────────┤
+  │ Cost per pod     │ Build duration             │ Low, only if duration   │
+  │                  │                            │ matters                 │
+  └──────────────────┴────────────────────────────┴─────────────────────────┘
+
+● User answered Claude's questions:
+  ⎿  · For the browser-reuse change, which do you prefer? → I will let with your
+     changes, but the flag will be true, I want to conserved my work flow but I
+     want to test your implementation later. So if I will not affect nothing 
+     setting true in the flag, let it be. Addionally I want to know what do you 
+     men with exception-safe cleanup? It was not implemented before?
+     · Which pipeline items should I include in the next plan? (JenkinsCI is 
+     only touched if you pick a Jenkins item.) → Nothing else now
+
+● Setting the flag to true gives you exactly your old workflow. With
+  browser.perScenario=true, each scenario creates Playwright, Chromium, context
+  and page, and at the end closes all four, the same sequence as before. The
+  @AfterAll shutdown then finds nothing left to close. Later you can try reuse
+  with -Dbrowser.perScenario=false without touching any file.
+
+  What "exception-safe cleanup" means, and why it wasn't there before
+
+  Your original DriverManager.cleanup() was:
+
+  p.close();      // 1  if this throws...
+  c.close();      // 2  ...these lines never run
+  b.close();      // 3
+  pw.close();     // 4
+  TL_PAGE.remove(); ... TL_PLAYWRIGHT.remove();   // 5 ...and neither does this
+
+  A close() can throw, for example when Chromium crashed during the scenario, or
+  the page was already closed after a timeout ("Target closed"). With the old
+  code, one throw had a chain of effects:
+
+  @After (Hooks.afterScenario)
+    finally {
+      DriverManager.cleanup();        ← page.close() throws "Target closed"
+      ArtifactSinks.clear();          ← SKIPPED
+      ExtentReportManager.clearTest();← SKIPPED
+      SeedManager.clear();            ← SKIPPED
+    }
+
+  1. Leaked processes: Chromium and the Playwright driver were never closed. On
+     a long local run they pile up and eat memory. In Jenkins the pod dies
+     anyway, so it mattered less there.
+  2. A confusing extra error: the @After hook itself fails with "Target closed",
+     on top of the real failure.
+  3. Wrong reports. Because ExtentReportManager.clearTest() was skipped, the
+     thread keeps the previous scenario's Extent test. The next scenario on that
+     thread would log its steps inside the previous scenario's entry in the
+     report.
+
+  The new version wraps each close() in its own try/catch. It logs a warning if
+  one fails, still closes the rest, always clears the per-thread state, and
+  never throws. It was not implemented before; this is part of fix #6.
+
+  This matters regardless of the flag: it protects browser.perScenario=true
+  (your workflow) exactly as much as reuse.
+
+● Updated plan
+  ⎿  /plan to preview
+
+● User approved Claude's plan
+  ⎿  Plan saved to: 
+     C:\Users\luisb\.claude\plans\let-start-fixing-the-typed-river.md · /plan to
+     edit
+     Plan: make browser.perScenario=true the default
+
+     Context
+
+     Browser reuse per thread was added while fixing Medium finding #5. In the
+     user's Jenkins setup, each thread runs exactly one scenario (2 scenarios
+     per pod, 2 threads), so reuse brings no benefit there. The user wants to
+     keep the implementation but keep their original workflow by default, and
+     test reuse later with -Dbrowser.perScenario=false.
+
+     With true, each scenario creates and closes Playwright, Browser, Context
+     and Page, exactly as the original code did. The exception-safe cleanup (#6)
+     stays in place for both modes.
+
+     Changes
+
+     1. src/main/resources/driver.properties: set browser.perScenario=true, and
+        update the comment to say that true is the default (the original
+        behavior) and that false reuses one browser per thread, to be tried
+        later.
+     2. src/main/java/com/mapfre/config/ConfigManager.java
+        (isBrowserPerScenario):
+        - Change the fallback default from "false" to "true", so the behavior
+          stays the original one even if the key is missing from the properties
+          file.
+        - Update its comment.
+     3. src/main/java/com/mapfre/playwright/driver/DriverFactory.java: update
+        the Javadoc on init(). The default now creates everything per scenario,
+        and browser.perScenario=false reuses the thread's browser with a new
+        context per scenario.
+     4. CLAUDE.md:
+        - Commands: replace the -Dbrowser.perScenario=true line with
+          -Dbrowser.perScenario=false ("try browser reuse per thread").
+        - Architecture: the driver description now says the default is per
+          scenario.
+        - 2026-09-25 history: note that the default was switched to true at the
+          user's request. Reuse is implemented but opt-in, and has no effect in
+          Jenkins today (1 scenario per thread).
+        - Configuration line: unchanged.
+
+     No changes to JenkinsCI, Hooks or DriverManager. @AfterAll shutdownAll() is
+     harmless when nothing is registered.
+
+     Verification
+
+     1. mvn -B -q -o test-compile passes.
+     2. Re-run the scratch smoke suite in the scratchpad, using the classpath
+        from scratchpad/cp.txt and io.cucumber.core.cli.Main --threads 2:
+        - No flag: 4 scenarios → 4 distinct browser ids, the original behavior.
+        - -Dbrowser.perScenario=false: 2 browser ids, one per thread, reused.
+        - Both runs pass, and no chrome-headless-shell processes remain
+          afterwards.
+
+● Update(src\main\resources\driver.properties)  ⎿  Added 3 lines, removed 2 lines
+       2  headless=true
+       3  maximize=true
+       4  pageLoadTimeout=40000
+       5 -# false = un navegador por hilo reutilizado (contexto nuevo por
+         - escenario); true = navegador nuevo por escenario              
+       6 -browser.perScenario=false                                      
+       5 +# true (por defecto) = Playwright + navegador nuevos por escena
+         +rio (comportamiento original)                                  
+       6 +# false = un navegador por hilo reutilizado, con contexto nuevo
+         + por escenario (opcional, para probar)                         
+       7 +browser.perScenario=true                                       
+       8  #defaultTimeoutMs=40000
+       9  #se implementara un mentodo para la siguiente version
+      10  implicitWait=10
+      11   No newline at end of file
+
+● Update(src\main\java\com\mapfre\config\ConfigManager.java)
+  ⎿  Added 3 lines, removed 3 lines
+      80          return Boolean.parseBoolean(get(DRIVER_PROPS, "maximize
+          ", "true"));
+      81      }
+      82  
+      83 -    // false (default): un navegador por hilo reutilizado entre
+         - escenarios, con contexto nuevo por escenario.                 
+      84 -    // true: Playwright + navegador nuevos en cada escenario (c
+         -omportamiento anterior).                                       
+      83 +    // true (por defecto): Playwright + navegador nuevos en cad
+         +a escenario (comportamiento original).                         
+      84 +    // false: un navegador por hilo reutilizado entre escenario
+         +s, con contexto nuevo por escenario.                           
+      85      public static boolean isBrowserPerScenario() {
+      86 -        return Boolean.parseBoolean(get(DRIVER_PROPS, "browser.
+         -perScenario", "false"));                                       
+      86 +        return Boolean.parseBoolean(get(DRIVER_PROPS, "browser.
+         +perScenario", "true"));                                        
+      87      }
+      88  
+      89      public static double getDefaultTimeoutMs() {
+
+● Update(src\main\java\com\mapfre\playwright\driver\DriverFactory.java)
+  ⎿  Added 3 lines, removed 2 lines
+       9  
+      10      /**
+      11       * Prepara el navegador del escenario actual.
+      12 -     * Por defecto reutiliza el Playwright/Browser del hilo y c
+         -rea un BrowserContext + Page nuevos                            
+      13 -     * (aislamiento de cookies/storage por escenario). Con brow
+         -ser.perScenario=true crea todo nuevo.                          
+      12 +     * Por defecto (browser.perScenario=true) crea Playwright, 
+         +Browser, BrowserContext y Page nuevos por escenario.           
+      13 +     * Con browser.perScenario=false reutiliza el Playwright/Br
+         +owser del hilo y solo crea un BrowserContext + Page            
+      14 +     * nuevos (aislamiento de cookies/storage por escenario).  
+      15       */
+      16      public static void init() {
+      17          ConfigManager.load();
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      17  mvn -B test -Dcucumber.execution.dry-run=true -Dcucumber.plugin
+          =json:target/dry.json   # list/validate steps, no browser
+      18  mvn -B test ... -Ddata.seed=12345                          # re
+          produce the random test data of a run
+      19  mvn -B test ... -Dheadless=false -Dbrowser=firefox         # dr
+          iver.properties keys can be overridden with -D
+      20 -mvn -B test ... -Dbrowser.perScenario=true                 # fa
+         -ll back to a new Playwright+browser per scenario               
+      20 +mvn -B test ... -Dbrowser.perScenario=false                # tr
+         +y browser reuse per thread (default true = new browser per scen
+         +ario)                                                          
+      21  mvn -B test ... -Dui.legacyWait.scale=0.5                  # sh
+          orten the legacy fixed waits (default 1.0)
+      22  ```
+      23  Runner: `src/test/java/com/mapfre/test/runner/RunnerCucumberTes
+          t.java`. The default tag expression is `"not @wip"`, and `-Dcuc
+          umber.filter.tags` overrides it.
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      36  ```
+      37  src/main/java/com/mapfre
+      38    config/              ConfigManager, EnvironmentConfig (app.ur
+          l.<env>)
+      39 -  playwright/driver/   DriverFactory (browser per thread, reuse
+         -d; new Context+Page per scenario), DriverManager (ThreadLocals,
+         - cleanup, shutdownAll), BrowserOptions                         
+      39 +  playwright/driver/   DriverFactory (default: new Playwright+B
+         +rowser+Context+Page per scenario; opt-in browser reuse per thre
+         +ad), DriverManager (ThreadLocals, cleanup, shutdownAll), Browse
+         +rOptions                                                       
+      40    playwright/pageobjects/  BasePage (shared helpers) + pages pe
+          r business area (poliza/*, constanciasSctrVidaLey/*, inspeccion
+          Autos/*)
+      41    playwright/components/   MaterialAutocomplete, MaterialDatePi
+          cker, SearchResults component
+      42    utils/               UiSync (spinner waves + quiet period), C
+          heckpoint, DownloadVsErrorRace, DateUtils, StringUtils
+
+● Update(CLAUDE.md)
+  ⎿  Added 4 lines, removed 4 lines
+      83  
+      84  ## History and decisions (2026-09-25): Medium findings
+      85  - **One screenshot per step:** the plugin captures it and `@Aft
+          erStep` reuses it. A failed screenshot now logs a warning inste
+          ad of marking the test FAIL.
+      86 -- **Browser reuse:**                                           
+      87 -  - Each thread launches one browser and reuses it, with a new 
+         -`BrowserContext` per scenario.                                 
+      88 -  - `browser.perScenario=true` restores the old behavior.      
+      89 -  - Browsers close in `Hooks.@AfterAll`.                       
+      86 +- **Browser reuse (implemented, opt-in):**                     
+      87 +  - With `browser.perScenario=false`, each thread launches one 
+         +browser and reuses it, with a new `BrowserContext` per scenario
+         +, and browsers close in `Hooks.@AfterAll`.                     
+      88 +  - At the user's request, the **default is `true`** (new Playw
+         +right and browser per scenario, the original workflow).        
+      89 +  - Reuse has no effect in Jenkins today, because each pod runs
+         + 2 scenarios on 2 threads (1 scenario per thread). It only help
+         +s when a thread runs several scenarios (local bulk runs, `HILOS
+         +_DE_EJECUCION=1`). The user will test it later.                
+      90  - **Safe cleanup:** `cleanup()` / `shutdownAll()` close each re
+          source separately, log failures, never throw, and always remove
+           the ThreadLocals.
+      91  - **`ElementAsserts` keeps the cause:** every `AssertExceptions
+          ` thrown from a catch carries the Playwright error.
+      92  - **`waitRandomBetween`** is deterministic and scaled by `ui.le
+          gacyWait.scale`.
+
+● Compiling and re-running the smoke suite in both modes:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The default is now browser.perScenario=true, so every scenario creates and
+  closes its own Playwright, browser, context and page, exactly as before.
+  Browser reuse is still in the code but only runs if you turn it on.
+
+  What changed:
+  - driver.properties: browser.perScenario=true, with a comment explaining both
+    values.
+  - ConfigManager.isBrowserPerScenario(): also falls back to true if the key is
+    missing, so you keep your workflow even without the property.
+  - DriverFactory: documentation updated to match.
+  - CLAUDE.md: the default is true, reuse is opt-in, and it has no effect in
+    Jenkins today (1 scenario per thread).
+
+  Checks: the project compiles, and I ran the local test suite with Chromium on
+  2 threads:
+
+  ┌─────────────────────────────┬────────┬────────────────────┬─────────────┐
+  │            Mode             │ Result │ Browsers launched  │  Leftover   │
+  │                             │        │                    │  processes  │
+  ├─────────────────────────────┼────────┼────────────────────┼─────────────┤
+  │                             │        │ 4, one per         │             │
+  │ Default (no flag)           │ passed │ scenario (original │ 0           │
+  │                             │        │  behavior)         │             │
+  ├─────────────────────────────┼────────┼────────────────────┼─────────────┤
+  │ -Dbrowser.perScenario=false │ passed │ 2, one per thread, │ 0           │
+  │                             │        │  reused            │             │
+  └─────────────────────────────┴────────┴────────────────────┴─────────────┘
+
+  Nothing changes for your Jenkins pipeline or JenkinsCI. The exception-safe
+  cleanup applies in both modes.
+
+  When you want to try reuse on the VPN machine:
+  mvn -B test -Dcucumber.filter.tags="@constanciamanual" -Ddp.threads=1
+  -Dbrowser.perScenario=false
+  -Ddp.threads=1 makes one thread run the tag's scenarios one after another,
+  which is the only case where reuse does anything.
+
+✻ Cogitated for 2m 53s · done Friday 6:28 PM
+
+❯ give me a message that summary all changes we did for my commit message       
+
+● Login expired · Please run /login
+
+✻ Crunched for 0s · done 10:19 AM

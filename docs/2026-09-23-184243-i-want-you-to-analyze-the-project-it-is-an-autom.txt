@@ -1,0 +1,976 @@
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Opus 5.5 · Claude Pro
+  ▝▝ ▝▝    D:\workspace\playwright-real-draft-v3-claude\docs
+
+  Opus 5.5 is now your default model and it draws down usage faster than Sonnet 5. Switch anytime with /model.
+
+❯ I want you to analyze the project. It is an automation playwright and java    
+  project separated from any source code or application under test. There are a 
+  bunch of set of technologies used into this project structure. I want a       
+  detailed report after you complete analyzing it.                              
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+● Reviewed config, driver, hooks and reporting layers; now reading the page
+  objects, utils and step definitions.
+
+  Ran 6 shell commands (ctrl+o to expand)
+
+● Checked the features and Gherkin structure. Last step: test-data utilities,
+  the login flow, and whether the project compiles.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Analysis report: OIM test automation framework (Playwright + Java)
+
+  The project is a separate, black-box UI test framework for MAPFRE Perú's OIM 
+  portal (oim.pre.mapfre.com.pe). It contains no application code. It has about
+  300 source files: 25k lines of page objects and 5k lines of step definitions.
+  I checked that it compiles: mvn -o test-compile passes with Java 17.
+
+  1. Technology stack
+
+  Layer: Language / build
+  Technology: Java, Maven
+  Version: 17 / 3.9.7
+  Notes: maven-compiler-plugin 3.13, release=17
+  ────────────────────────────────────────
+  Layer: Browser automation
+  Technology: Microsoft Playwright for Java
+  Version: 1.57.0
+  Notes: Chromium, Firefox or WebKit, chosen by setting
+  ────────────────────────────────────────
+  Layer: BDD
+  Technology: Cucumber (cucumber-java, cucumber-testng)
+  Version: 7.33.0
+  Notes: Gherkin steps written in Spanish (the files use the English
+  Given/When/Then keywords)
+  ────────────────────────────────────────
+  Layer: Test runner
+  Technology: TestNG, run through Surefire 3.5.4
+  Version: 7.11.0
+  Notes: Scenarios run in parallel through the @DataProvider(parallel=true)
+  threads
+  ────────────────────────────────────────
+  Layer: Dependency injection
+  Technology: cucumber-picocontainer
+  Version: 7.32
+  Notes: Gives each scenario its own ScenarioContext, PageProvider and
+  SchedulingState
+  ────────────────────────────────────────
+  Layer: Reporting
+  Technology: ExtentReports 5 (Spark + JSON), Cucumber HTML/JSON/JUnit
+  Version: 5.1.2
+  Notes: The JSON output from each pod is merged into one report in CI
+  ────────────────────────────────────────
+  Layer: Logging
+  Technology: SLF4J + slf4j-simple
+  Version: 2.0.17
+  Notes: Plus a custom console step logger
+  ────────────────────────────────────────
+  Layer: Test data
+  Technology: Apache POI (xls/xlsx), Gson, commons-io, commons-lang3
+  Version: 5.5.1 …
+  Notes: Excel upload templates are edited at runtime
+  ────────────────────────────────────────
+  Layer: CI
+  Technology: Jenkins declarative pipeline on Kubernetes pods
+  Version: —
+  Notes: Shared libraries global-pipeline-library and pe-common-pipeline-config,
+
+  code from Bitbucket, logs to Logstash
+
+  2. Architecture
+
+  src/main/java/com/mapfre       ← reusable framework + page objects
+   ├─ config/        ConfigManager (priority: -D > ENV > .properties), 
+  EnvironmentConfig (app.url.<env>)
+   ├─ playwright/driver/  DriverFactory, DriverManager (ThreadLocal 
+  Playwright/Browser/Context/Page), BrowserOptions
+   ├─ playwright/pageobjects/   BasePage (889 lines, ~70 helpers) + ~125 pages 
+  by business area
+   ├─ playwright/components/    MaterialAutocomplete, MaterialDatePicker, 
+  SearchResults component
+   ├─ utils/waits/   FirstAppearanceRace, FirstDisappearanceRace, GestorModal, 
+  OptionalModalWait, ValueWait
+   ├─ utils/         UiSync (spinner "waves" + quiet period), Checkpoint, 
+  DownloadVsErrorRace, RandomData…
+   ├─ asserts/       ElementAsserts (wrapper over PlaywrightAssertions)
+   └─ reporting/     ArtifactSink / ArtifactSinks (lets main code emit 
+  screenshots without knowing Cucumber)
+  src/test/java/com/mapfre
+   ├─ runner/        RunnerCucumberTest (AbstractTestNGCucumberTests)
+   ├─ hooks/         Hooks (@Before/@AfterStep/@After), ExtentLifecycleHooks, 
+  ScenarioContext, ScenarioKeys, PageProvider
+   ├─ reporting/     ExtentCucumberStepsPlugin, ConsoleStepLogger, 
+  ExtentReportManager, ExtentJsonMergeMain
+   └─ stepdefinitions/  ~85 step classes mirroring the page-object tree
+  src/test/resources
+   ├─ features/      55 .feature files, 81 Scenario Outlines
+   ├─ docsFeatures/  22 Markdown docs describing features (flow, validations, 
+  out of scope, data)
+   ├─ testdata/uploads/templates/  xls/xlsx/pdf/txt upload templates
+   └─ images/        vehicle inspection photos for upload
+
+  Business areas covered: policy quote and issuance for Auto (new and used, with
+  inspection), SOAT, SCTR (short and regular period), Vida Ley, Accidentes,
+  Salud, Vida Individual, Vida Inversión, FOLA, Decesos, Camposanto, Transporte
+  and Riesgos Generales. It also covers the Constancias SCTR / SCTR Minería / 
+  Vida Ley module (declaración, inclusión, manual, reemplazo, reimpresión,
+  anulación, mes vencido) and Inspección de Autos.
+
+  How one scenario runs
+
+  1. The TestNG data provider hands scenarios to threads. The dp.threads setting
+     controls how many (default 1; Jenkins uses 2).
+  2. Hooks.@Before sets up the screenshot sink, then DriverFactory.init()
+     creates a full Playwright instance, browser, context and page for that 
+     scenario, stored per thread. It also creates the Extent test.
+  3. Step classes get a PageProvider and a ScenarioContext through PicoContainer
+     and build their page objects in the constructor.
+  4. Page methods follow an action + UiSync.waitForAppIdle pattern: they wait
+     until the spinner is hidden and stays hidden for 250 ms. Harder transitions
+     use race utilities such as FirstAppearanceRace, which reports whether
+     error, success or timeout appeared first and stayed stable.
+  5. @After takes a screenshot on failure, then DriverManager.cleanup() and
+     clears the per-thread state.
+
+  CI pipeline (JenkinsCI)
+
+  1. Discover: a dry run of Cucumber with the chosen tags writes JSON, which is
+     turned into a list of feature:line entries.
+  2. Split: the list is cut into groups of 2, and each group gets its own 
+     Kubernetes pod, all running in parallel. Each pod runs 2 threads.
+  3. Per pod: runs the tests, removes  - #1 suffixes from JUnit test names (for
+     Octane), publishes JUnit, and stashes extent.json.
+  4. Merge: ExtentJsonMergeMain is run through exec:java. It merges every pod's
+     JSON into one Spark HTML report, which is then passed to publishHTML and
+     archived.
+
+  This is a well-designed setup: splitting across pods with a merged Extent
+  report is not common, and it scales well.
+
+  3. Strengths
+
+  - Clean layering: configuration, driver, pages, steps and reporting are
+    separate. The ArtifactSink interface stops src/main from depending on
+    Cucumber.
+  - Built to run in parallel: driver objects and Extent tests are stored per
+    thread, with scenario state injected by PicoContainer. ScenarioContext
+    documents why it is thread-safe.
+  - Modern locators: about 580 getByRole, 195 getByText and 83 getByLabel calls,
+    against only 27 XPath uses.
+  - Synchronization designed around the app: the spinner-wave plus quiet-period
+    approach and the first-appearance races fit an Angular app with many modals.
+  - Configuration follows 12-factor style: any key can be overridden with -D or
+    an environment variable.
+  - Rich evidence: screenshots inside each step node, named checkpoints, and a
+    readable console log with per-step timings.
+  - Living docs: the docsFeatures/*.md files describe each flow in business
+    terms.
+
+  4. Findings and risks (most important first)
+
+  🔴 High
+
+  1. Plain-text credentials and an internal URL in the repo. global.properties
+     contains user.email=WEBMASTER and user.password=Mapfre123.. Because
+     ConfigManager already accepts environment variables, the fix is to remove
+     these values and set USER_PASSWORD from a Jenkins credential. Treat this
+     password as exposed and rotate it. A second problem: LoginPage reads the
+     values through ConfigManager.getProperty, which skips the -D/ENV override.
+     It needs to switch to getGlobal for the override to work.
+  2. RandomData returns the same values every time. rnd() builds new 
+     Random(SeedManager.seed()) on every call, with the same seed per thread,
+     and SeedManager.clear() is never called. As a result, numeric(),
+     fullName(), randomPlate(), randomVehicleIdentificationNumber() and
+     randomEngineNumber() return the same value on every call in a thread, and 
+     in every later scenario on that thread. Two used-auto scenarios on one
+     thread would register the same plate, VIN and engine number. Fix: keep one
+     Random per thread and clear the seed in @After. idDocumentPeru is not
+     affected because it uses ThreadLocalRandom.
+  3. The runner hardcodes tags = "@riesgosgenerales". Running mvn test locally
+     without -Dcucumber.filter.tags runs only that one module. Jenkins always
+     passes tags, so CI works, but this is easy to miss.
+
+  🟠 Medium
+
+  4. Two screenshots per step. Hooks.@AfterStep and
+     ExtentCucumberStepsPlugin.onTestStepFinished both take a full screenshot
+     after every step, and ExtentEvidence.shot calls add more. This slows runs
+     and makes reports large (base64 images inside the JSON that gets merged).
+  5. A full Playwright instance and browser start for each scenario. This
+     isolates scenarios well but costs about 1–2 s per scenario. A lighter
+     option is one browser per thread with a new BrowserContext per scenario.
+  6. DriverManager.cleanup() is not exception-safe. If page.close() throws, the
+     browser and Playwright process leak and the per-thread values are never
+     removed.
+  7. ElementAsserts throws away the original error. It throws new 
+     AssertExceptions(message) without the cause, so the Playwright call log and
+     locator details are lost, which makes failures harder to diagnose.
+  8. Fixed waits and polling. There are 54 waitForTimeout calls, 2 Thread.sleep
+     in DocumentoSoatPage, and waitRandomBetween. clickMenuOption uses
+     JavaScript clicks plus 3.5 s of fixed waits.
+  9. JavaScript built by string concatenation. In clickMenuOption, '" + menuName
+     + "' breaks if a menu name contains a quote. Pass it as an evaluate
+     argument instead.
+  10. Broad exception handling. There are 143 catch (Exception …) blocks and 73
+      System.out.println calls that bypass SLF4J and the reports.
+
+  🟡 Low / maintainability
+
+  11. The step-definition style creates very long steps. Some steps take 16
+      parameters (for example the SCTR "Datos de la empresa" step). All 81
+      scenarios are Scenario Outlines, mostly with a single Examples row, and
+      there are no Background blocks even though every scenario starts with the
+      same login and navigation. Data tables or a data model would make steps
+      shorter and easier to reuse.
+  12. BasePage is a large catch-all (889 lines). It has many near-duplicate
+      helpers (fillInputIfEnabledAndSync, fillInputIfEnabledBlurAndSync,
+      fillInputValueIfEnabledAndEmptyAndSync…) and names mixing English and
+      Spanish (seleccionarOpcionPorTexto next to selectOptionByTextInsensitive).
+      Moving these into components (the components/material package is a good
+      start) and a small fluent API would help.
+  13. Inconsistent tags and naming. Tags include @regresion and @Regresion, and
+      the Jenkins default is @emisionsctr. There are typos in folder and step
+      names (contaciasSctrVidaLey, riegosgenerales, emsion, fomrulario, codgio,
+      valdiar), and some leftover files (Formato_trama_sctr - copia.xls).
+  14. Maven metadata is still placeholder. It shows groupId org.example,
+      artifactId playwright-project-try-02. There is no Maven Wrapper and no
+      dependency or plugin version enforcement. app.url.dev and app.url.prod
+      point to saucedemo.com, and implicitWait in driver.properties is never
+      used.
+  15. Hardcoded relative paths. TemplateFactory uses Paths.get("src/test/…"),
+      which ties runs to the working directory, even though TestResourceFiles
+      (classpath-based) already exists.
+  16. Report placement. ExtentJsonMergeMain and the reporting classes are in
+      src/test, while ArtifactSink is in src/main. This works, but the report
+      module is split across both. Duplicate or unused code:
+      ExtentCucumberStepsPlugin.onTestRunFinished and
+      ExtentLifecycleHooks.@AfterAll both flush, and SchedulingState is used by
+      only one step class.
+  17. No automated checks on the framework itself. There are no unit tests for
+      the utilities (races, DateUtils, RandomData), no static analysis
+      (Checkstyle, SpotBugs) and no README or CLAUDE.md. .gitignore exists, but
+      the folder here is not a git repository.
+
+  5. Recommended next steps
+
+  1. Remove the credentials from global.properties, rotate the password, and
+     switch LoginPage to getGlobal.
+  2. Fix RandomData/SeedManager: one Random per thread, with the seed cleared in
+     @After.
+  3. Remove the hardcoded tag from the runner, or default it to something
+     harmless like not @wip.
+  4. Take one screenshot per step (remove the duplicate @AfterStep capture) and
+     make cleanup() and ElementAsserts safer.
+  5. Move to one browser per thread and one context per scenario, and replace
+     fixed waits with state-based waits.
+  6. Refactor gradually: Background for login, shorter steps, split BasePage
+     into components, and one tagging convention.
+
+  I can turn this report into a shareable page if you want to pass it to your
+  team. I can also start fixing any of the high-priority items.
+
+✻ Churned for 2m 35s · done 5:08 PM
+
+※ recap: I analyzed your Playwright + Java framework for the MAPFRE OIM portal and wrote a detailed report with its stack, architecture, strengths and risks. Next, I'd fix the top issue: the plain-text credentials in global.properties. (disable recaps in /config)
+
+❯ let start fixing the top issues you categorized as High                       
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● User answered Claude's questions:
+  ⎿  · Once the hardcoded `@riesgosgenerales` tag is removed from 
+     RunnerCucumberTest, what should a plain `mvn test` run by default? (Any 
+     -Dcucumber.filter.tags value still overrides it.) → "not @wip"
+     · How should the pipeline supply the OIM login once it's gone from 
+     global.properties? I'd use Jenkins `withCredentials` to set USER_EMAIL / 
+     USER_PASSWORD for the test run. Is there a credential ID for this already? 
+     → Don't touch JenkinsCI
+     · For running from the IDE on your machine, how do you want to supply the 
+     credentials? → Git-ignored local file (Recommended)
+
+● Updated plan
+  ⎿  /plan to preview
+
+● User approved Claude's plan
+  ⎿  Plan saved to: 
+     C:\Users\luisb\.claude\plans\let-start-fixing-the-typed-river.md · /plan to
+     edit
+     Plan: fix the 3 High-severity findings
+
+     Context
+
+     The analysis report flagged three High issues:
+     1. Credentials in the repo. src/main/resources/global.properties contains
+        user.email=WEBMASTER / user.password=Mapfre123.. LoginPage also reads
+        them with ConfigManager.getProperty, which skips the -D/ENV override, so
+        the values can't be injected from outside.
+     2. RandomData repeats values. rnd() builds new Random(SeedManager.seed())
+        on every call. The seed is per thread and SeedManager.clear() is never
+        called, so every scenario on the same thread gets the same plate, VIN
+        and engine number (CotizacionAutoSteps:40-42). numeric(), fullName() and
+        uniqueSuffix() repeat on every call.
+     3. The runner hardcodes tags = "@riesgosgenerales", so a plain mvn test
+        runs only one module.
+
+     Decisions from the user: default tags = "not @wip"; do not modify 
+     JenkinsCI; local credentials come from a git-ignored
+     config/local/global.properties.
+
+     Changes
+
+     1. Credentials
+
+     - src/main/resources/global.properties: delete the user.email /
+       user.password values. Replace them with a comment that says how to supply
+       them: -Duser.email/-Duser.password, env USER_EMAIL/USER_PASSWORD, or
+       config/local/global.properties.
+     - src/main/java/com/mapfre/config/ConfigManager.java: in load(), after
+       loading the classpath global.properties, also load the optional file
+       config/local/global.properties, relative to the working directory (the
+       project root under Maven and IntelliJ). Use Files.exists →
+       Files.newBufferedReader(UTF_8), loaded into GLOBAL_PROPS so it overrides
+       the classpath values. It is skipped silently if absent. The priority
+       becomes -D > ENV > local file > classpath, and the existing overrideValue
+       logic is unchanged. config/local/ is already in .gitignore.
+     - src/main/java/com/mapfre/playwright/pageobjects/LoginPage.java: remove
+       the two field initializers. In loginOim(), read the values with
+       ConfigManager.getGlobal("user.email") / getGlobal("user.password"),
+       reusing the existing -D/ENV-aware getter. If either is blank, throw
+       FrameworkException with a Spanish message listing the 3 ways to supply
+       them. The check happens at login, not in the constructor, so steps that
+       only build the page don't fail.
+     - JenkinsCI is not touched. The user will inject USER_EMAIL/USER_PASSWORD
+       in Jenkins (for example with withCredentials). The password must be 
+       rotated: it is already in Bitbucket history and in target/classes.
+
+     2. Test-data randomness
+
+     - src/main/java/com/mapfre/utils/testdata/SeedManager.java: add a
+       ThreadLocal<Random> TL_RANDOM and a random() method that lazily creates
+       new Random(seed()). clear() removes both the seed and the Random.
+     - src/main/java/com/mapfre/utils/testdata/RandomData.java:
+       - uniqueSuffix(), numeric() and fullName() use SeedManager.random(), a
+         single stream per scenario, so each call returns a new value that can
+         still be reproduced from the seed.
+       - randomPlate(), randomVehicleIdentificationNumber() and
+         randomEngineNumber() keep the fresh new Random(seed) in a private
+         helper named correlatedRnd(), with a comment. Their existing comments
+         ("sincronizados con randomPlate") show the plate, VIN and engine number
+         are meant to share the first 6 characters, so this keeps that
+         behavior. Values now differ between scenarios because the seed is reset
+         per scenario.
+     - src/test/java/com/mapfre/test/hooks/Hooks.java:
+       - @Before: call SeedManager.clear(), then long seed = SeedManager.seed(),
+         and log it with ReportLogger.info("Data seed: " + seed + " (reproduce 
+         con -Ddata.seed=...)") after the Extent test exists.
+       - @After finally: add SeedManager.clear().
+       - With -Ddata.seed=N, every scenario reproduces the same data, which is
+         the behavior the existing SeedManager code intends.
+
+     3. Runner default tags
+
+     - src/test/java/com/mapfre/test/runner/RunnerCucumberTest.java: change tags
+       = "@riesgosgenerales" to tags = "not @wip". -Dcucumber.filter.tags still
+       overrides it (Cucumber gives properties priority over the annotation),
+       so Jenkins behaves the same.
+
+     Verification
+
+     1. mvn -B -q -o test-compile compiles.
+     2. Default tags: mvn -B -q -o test -Dcucumber.execution.dry-run=true 
+        -Dcucumber.plugin=json:target/dry.json finds all 81 scenarios, where it
+        previously found only the riesgosgenerales ones.
+        -Dcucumber.filter.tags=@riesgosgenerales still narrows the run.
+     3. RandomData: a scratchpad jshell script on target/classes checks that:
+        - two numeric(8) calls differ;
+        - after SeedManager.clear() a new plate differs;
+        - plate, VIN and engine still share their 6-character prefix;
+        - -Ddata.seed=42 gives the same plate across clear().
+     4. Credentials: grep confirms no password remains in src/. With nothing
+        set, loginOim() fails with the clear message; this can be checked with a
+        small ConfigManager.getGlobal call in jshell. With
+        USER_EMAIL/USER_PASSWORD set, or with config/local/global.properties,
+        getGlobal returns the values. A real login needs network access to
+        oim.pre.mapfre.com.pe, which the user can run with
+        -Dcucumber.filter.tags=@<small tag>.
+
+  Read 7 files (ctrl+o to expand)
+
+● Now applying the edits.
+
+● Update(D:\workspace\playwright-real-draft-v3-claude\src\main\resources\global.
+        properties)
+  ⎿  Added 5 lines, removed 3 lines
+      13  
+      14  ui.screenshot.checkpoints.enabled=true
+      15  
+      16 -# Credenciales                                                 
+      17 -user.email=WEBMASTER                                           
+      18 -user.password=Mapfre123.                                       
+      16   No newline at end of file
+      17 +# Credenciales: NO versionar aqui. Definir user.email / user.pa
+         +ssword por una de estas vias                                   
+      18 +# (en orden de prioridad):                                     
+      19 +#   1) -Duser.email=... -Duser.password=...                    
+      20 +#   2) variables de entorno USER_EMAIL / USER_PASSWORD         
+      21 +#   3) archivo local config/local/global.properties (ignorado p
+         +or git)                                                        
+      22   No newline at end of file
+
+● Update(D:\workspace\playwright-real-draft-v3-claude\src\main\java\com\mapfre\c
+        onfig\ConfigManager.java)
+  ⎿  Added 16 lines
+       4  
+       5  import java.io.IOException;
+       6  import java.io.InputStream;
+       7 +import java.io.Reader;                                         
+       8 +import java.nio.charset.StandardCharsets;                      
+       9 +import java.nio.file.Files;                                    
+      10 +import java.nio.file.Path;                                     
+      11  import java.util.Properties;
+      12  
+      13  public final class ConfigManager {
+      14      private static final Properties DRIVER_PROPS = new Properti
+          es();
+      15      private static final Properties GLOBAL_PROPS = new Properti
+          es();
+      16 +    // Overrides locales opcionales (credenciales, etc.). La ca
+         +rpeta config/local/ esta en .gitignore                         
+      17 +    private static final Path LOCAL_GLOBAL_PROPS = Path.of("con
+         +fig", "local", "global.properties");                           
+      18      private static boolean loaded = false;
+      19  
+      20      private ConfigManager() {}
+     ...
+      23          if (loaded) return;
+      24          loadProps("driver.properties", DRIVER_PROPS);
+      25          loadProps("global.properties", GLOBAL_PROPS);
+      26 +        loadOptionalFile(LOCAL_GLOBAL_PROPS, GLOBAL_PROPS);    
+      27          loaded = true;
+      28      }
+      29  
+      30 +    private static void loadOptionalFile(Path file, Properties 
+         +target) {                                                      
+      31 +        if (!Files.isRegularFile(file)) return;                
+      32 +        try (Reader in = Files.newBufferedReader(file, Standard
+         +Charsets.UTF_8)) {                                             
+      33 +            target.load(in);                                   
+      34 +        } catch (IOException e) {                              
+      35 +            throw new FrameworkException("No se pudo cargar el 
+         +archivo local: " + file.toAbsolutePath(), e);                  
+      36 +        }                                                      
+      37 +    }                                                          
+      38 +                                                               
+      39      private static void loadProps(String resourceName, Properti
+          es target) {
+      40          try (InputStream in = ConfigManager.class.getClassLoade
+          r().getResourceAsStream(resourceName)) {
+      41              if (in == null) throw new FrameworkException("Archi
+          vo de recursos faltante: " + resourceName);
+
+● Write(D:\workspace\playwright-real-draft-v3-claude\src\main\java\com\mapfre\pl
+       aywright\pageobjects\LoginPage.java)
+  ⎿  Added 13 lines, removed 4 lines
+      3  import com.microsoft.playwright.Locator;
+      4  import com.microsoft.playwright.Page;
+      5  import com.mapfre.config.ConfigManager;
+      6 +import com.mapfre.exceptions.FrameworkException;                
+      7  import com.microsoft.playwright.options.AriaRole;
+      8  
+      9  public class LoginPage extends BasePage {
+     ...
+      11      private final Locator usernameInput;
+      12      private final Locator passwordInput;
+      13      private final Locator loginButton;
+      13 -    String user = ConfigManager.getProperty("user.email");     
+      14 -    String passwordConfig = ConfigManager.getProperty("user.pas
+         -sword");                                                       
+      14  
+      15  
+      16      public LoginPage(Page page) {
+     ...
+      21      }
+      22  
+      23      public void loginOim() {
+      25 -        usernameInput.fill(user);                              
+      26 -        passwordInput.fill(passwordConfig);                    
+      24 +        usernameInput.fill(requiredCredential("user.email"));  
+      25 +        passwordInput.fill(requiredCredential("user.password"))
+         +;                                                              
+      26          clickAndSync(loginButton);
+      27      }
+      28  
+      29 +    private static String requiredCredential(String key) {     
+      30 +        String value = ConfigManager.getGlobal(key);           
+      31 +        if (value == null || value.isBlank()) {                
+      32 +            String envKey = key.toUpperCase().replace('.', '_')
+         +;                                                              
+      33 +            throw new FrameworkException("Falta la credencial '
+         +" + key + "'. Definirla con -D" + key + "=..., "               
+      34 +                    + "la variable de entorno " + envKey + " o 
+         +en config/local/global.properties");                           
+      35 +        }                                                      
+      36 +        return value;                                          
+      37 +    }                                                          
+      38  
+      39 +                                                               
+      40  }
+
+● Write(D:\workspace\playwright-real-draft-v3-claude\src\main\java\com\mapfre\ut
+       ils\testdata\SeedManager.java)
+  ⎿  Added 20 lines, removed 2 lines
+       1  package com.mapfre.utils.testdata;
+       2  
+       3 +import java.util.Random;                                       
+       4  import java.util.concurrent.ThreadLocalRandom;
+       5  
+       6 +/**                                                            
+       7 + * Semilla de datos de prueba por escenario (por hilo).        
+       8 + * Hooks llama a {@link #clear()} al inicio y fin de cada escen
+         +ario, asi cada escenario obtiene                               
+       9 + * una semilla nueva. Con -Ddata.seed=N todos los escenarios re
+         +producen los mismos datos.                                     
+      10 + */                                                            
+      11  public final class SeedManager {
+      12      private static final ThreadLocal<Long> TL_SEED = new Thread
+          Local<>();
+      13 +    private static final ThreadLocal<Random> TL_RANDOM = new Th
+         +readLocal<>();                                                 
+      14  
+      15      private SeedManager() {}
+      16  
+     ...
+      20  
+      21          String prop = System.getProperty("data.seed");
+      22          long seed = (prop != null && !prop.isBlank())
+      16 -                ? Long.parseLong(prop)                         
+      23 +                ? Long.parseLong(prop.trim())                  
+      24                  : ThreadLocalRandom.current().nextLong();
+      25  
+      26          TL_SEED.set(seed);
+      27          return seed;
+      28      }
+      29  
+      30 +    /** Secuencia aleatoria unica del escenario: cada llamada a
+         +vanza la secuencia (valores distintos). */                     
+      31 +    public static Random random() {                            
+      32 +        Random r = TL_RANDOM.get();                            
+      33 +        if (r == null) {                                       
+      34 +            r = new Random(seed());                            
+      35 +            TL_RANDOM.set(r);                                  
+      36 +        }                                                      
+      37 +        return r;                                              
+      38 +    }                                                          
+      39 +                                                               
+      40      public static void clear() {
+      41          TL_SEED.remove();
+      42 +        TL_RANDOM.remove();                                    
+      43      }
+      26 -}                                                              
+      44   No newline at end of file
+      45 +}                                                              
+
+● Update(D:\workspace\playwright-real-draft-v3-claude\src\main\java\com\mapfre\u
+        tils\testdata\RandomData.java)
+  ⎿  Added 8 lines, removed 1 line
+       9      private RandomData() {}
+      10  
+      11      private static Random rnd() {
+      12 -        // reproducible per scenario if data.seed provided     
+      12 +        // secuencia compartida del escenario: cada llamada dev
+         +uelve un valor distinto,                                       
+      13 +        // reproducible si se pasa -Ddata.seed                 
+      14 +        return SeedManager.random();                           
+      15 +    }                                                          
+      16 +                                                               
+      17 +    private static Random correlatedRnd() {                    
+      18 +        // Random nuevo con la misma semilla del escenario: pla
+         +ca, VIN y numero de motor                                      
+      19 +        // comparten intencionalmente los primeros 6 caracteres
+         + dentro de un mismo escenario                                  
+      20          return new Random(SeedManager.seed());
+      21      }
+      22  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(D:\workspace\playwright-real-draft-v3-claude\src\test\java\com\mapfre\t
+        est\runner\RunnerCucumberTest.java)
+  ⎿  Added 1 line, removed 1 line
+      10                  "com.mapfre.test.stepdefinitions",
+      11                  "com.mapfre.test.hooks"
+      12          },
+      13 -        tags = "@riesgosgenerales",                            
+      13 +        tags = "not @wip", // default; -Dcucumber.filter.tags l
+         +o sobrescribe                                                  
+      14          plugin = {
+      15                  //"summary",
+      16                  "html:target/cucumber-reports/cucumber.html",
+
+● Now the Hooks changes.
+
+● Update(D:\workspace\playwright-real-draft-v3-claude\src\test\java\com\mapfre\t
+        est\hooks\Hooks.java)
+  ⎿  Added 5 lines
+      34  
+      35          ReportLogger.info("Scenario started: " + scenario.getNa
+          me());
+      36          scenarioContext.put("scenarioName", scenario.getName())
+          ;
+      37 +                                                               
+      38 +        // Semilla nueva de datos de prueba por escenario (evit
+         +a repetir placa/VIN/etc. en el mismo hilo)                     
+      39 +        SeedManager.clear();                                   
+      40 +        long seed = SeedManager.seed();                        
+      41 +        ReportLogger.info("Data seed: " + seed + " (reproducir 
+         +con -Ddata.seed=" + seed + ")");                               
+      42      }
+      43  
+      44      @AfterStep
+
+● Update(D:\workspace\playwright-real-draft-v3-claude\src\test\java\com\mapfre\t
+        est\hooks\Hooks.java)
+  ⎿  Added 1 line
+      70              DriverManager.cleanup();
+      71              ArtifactSinks.clear();
+      72              ExtentReportManager.clearTest();
+      73 +            SeedManager.clear();                               
+      74          }
+      75      }
+      76  }
+      77   No newline at end of file
+● Update(D:\workspace\playwright-real-draft-v3-claude\src\test\java\com\mapfre\t
+        est\hooks\Hooks.java)
+  ⎿  Added 1 line
+       6  import com.mapfre.reporting.ExtentReportManager;
+       7  import com.mapfre.reporting.ReportLogger;
+       8  import com.mapfre.test.reporting.CucumberExtentArtifactSink;
+       9 +import com.mapfre.utils.testdata.SeedManager;                  
+      10  import io.cucumber.java.*;
+      11  import io.cucumber.java.Scenario;
+      12  
+
+● Compiling and running the dry-run tag check:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Default tags now pick up all 81 scenarios, and the tag override narrows to 7.
+  The dry run exited 1, so I'm checking why:
+
+  Searched for 1 pattern, ran 2 shell commands (ctrl+o to expand)
+
+● That undefined step was already broken prior to my changes—no matching step
+  definition exists—so I'll leave it as is and note it at the end. Now checking
+  the randomness behavior.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● All randomness checks pass, and the environment-variable override works. One
+  more check for the local-file option:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I fixed all three High issues. The project compiles and every check passed.
+
+  ⚠️ Your Jenkins runs will fail at login until you add the credentials there.
+  The login no longer lives in the repo, and I didn't touch JenkinsCI, as you
+  asked. In Jenkins, provide USER_EMAIL and USER_PASSWORD to the mvn test step
+  in the pod stage, for example with withCredentials. Also rotate the WEBMASTER 
+  password. It is still in your Bitbucket history, and in target/classes until
+  the next clean build.
+
+  What changed
+
+  1. Credentials
+  - global.properties: the username and password are gone. A comment explains
+    the three ways to supply them.
+  - ConfigManager: now also reads an optional config/local/global.properties, if
+    it exists. That folder is already ignored by git, so it's the place for
+    your local credentials. The order of priority is: -D setting, then
+    environment variable, then the local file, then the file in the repo.
+  - LoginPage: reads the credentials through the lookup that respects -D and
+    environment variables. If one is missing, the login step fails with a clear
+    message listing the three options.
+
+  2. Repeating test data
+  - SeedManager: now keeps one random-number sequence per scenario, so each call
+    gives a new value, and clear() resets it.
+  - RandomData:
+    - numeric, fullName and uniqueSuffix now return a different value on each
+      call.
+    - Plate, VIN and engine number still share their first 6 characters within a
+      scenario. The original comments showed that was intended, so I kept it.
+  - Hooks: each scenario now starts with a new seed and clears it at the end.
+    The seed is written to the Extent report, so you can reproduce a run's data
+    with -Ddata.seed=<n>.
+
+  3. Runner default tag
+  - RunnerCucumberTest: the default is now "not @wip" instead of
+    @riesgosgenerales. Passing -Dcucumber.filter.tags still overrides it.
+
+  Checks I ran
+
+  - mvn test-compile succeeds.
+  - A dry run with no tags finds all 81 scenarios. With
+    -Dcucumber.filter.tags=@riesgosgenerales it finds 7.
+  - A small check program confirmed:
+    - two numeric() calls give different values;
+    - the plate changes between scenarios;
+    - plate, VIN and engine number still share their prefix;
+    - data.seed=42 reproduces the same values;
+    - the credentials are read from the environment variables and from the local
+      file, and the environment variable wins over the file.
+  - No password remains anywhere under src/.
+
+  I haven't run a real login against oim.pre.mapfre.com.pe. To try one, put your
+  credentials in config/local/global.properties and run a small tag.
+
+  Existing bug that the default run now shows
+
+  Scenario 37 in oim_emision_auto.feature (line 14, "Emisión Póliza Auto Nuevo …
+  Datos del Vehiculo ingresamos la frecuencia de uso…") uses a step that no
+  step definition matches. It was already broken; the old hardcoded tag just
+  kept it out of the default run. A plain mvn test will now report it as
+  undefined. It needs a step definition, or the step text needs to match an
+  existing one. I can look into it if you'd like.
+
+✻ Crunched for 2m 37s · done 6:05 PM
+
+※ recap: I analyzed your Playwright/Java framework and fixed the three High issues: credentials removed from the repo, repeating random test data, and the hardcoded runner tag. Next, add USER_EMAIL and USER_PASSWORD in Jenkins and rotate the WEBMASTER password. (disable recaps in /config)
+
+❯ where and how should I credentials in config/local/global.properties?         
+
+● Create the file at the project root, next to pom.xml, not under src/:
+
+  D:\workspace\playwright-real-draft-v3-claude\
+  ├─ pom.xml
+  ├─ JenkinsCI
+  ├─ config\
+  │  └─ local\
+  │     └─ global.properties   ← create this
+  └─ src\...
+
+  Contents: only the keys you want to override.
+
+  user.email=WEBMASTER
+  user.password=YourNewPasswordHere
+
+  To create it from PowerShell in the project root:
+
+  New-Item -ItemType Directory -Force config\local
+  @'
+  user.email=WEBMASTER
+  user.password=YourNewPasswordHere
+  '@ | Out-File -Encoding utf8 config\local\global.properties
+
+  Things to know:
+  - Working directory: the path is resolved from the directory the tests run in.
+    mvn test from the project root works. In IntelliJ, check that the run
+    configuration's Working directory is the project root. That's the default
+    for Maven and TestNG configurations, but if it points somewhere else the
+    file is silently skipped and login fails with the "Falta la credencial"
+    message.
+  - Format: standard Java .properties file, read as UTF-8, so characters like ñ
+    are fine.
+    - Write a backslash in the password as \\.
+    - Spaces after the value are kept, so don't leave any at the end of the
+      password line.
+  - Priority: a -Duser.password=... flag or a USER_PASSWORD environment variable
+    replaces the value in this file. If you set one in your IntelliJ run
+    configuration, that value is used instead of the file.
+  - Git: config/local/ is already in .gitignore, so the file won't be committed.
+    The folder isn't a git repo yet, so this only takes effect once it is.
+    After running git init, check with git status that the file doesn't appear.
+  - Other settings: the file can override any other global.properties key for
+    your machine only, such as env=qa or ui.spinner.timeoutMs.
+  - Password: use the rotated password, not the one that was in the repo.
+
+✻ Sautéed for 9s · done 6:14 PM
+
+❯ I still cannot understand. Where the user and password would come from to run 
+  tests in jenkins if config/local/global.properties is the ingore file? When   
+  you said "the file can override any other global.properties key for your      
+  machine only, such as env=qa or ui.spinner.timeoutMs" that means  my          
+  src/resources/global.properties is useless? When you should I write \\        
+  symbol, give me an example.                                                   
+
+● 1. Where Jenkins gets the user and password
+
+  Jenkins never sees config/local/global.properties. That file lives only on
+  your laptop. It isn't committed, so the Jenkins pods never have it.
+
+  Jenkins uses a different route: environment variables. ConfigManager already
+  checks an environment variable before any file:
+
+  ┌───────────────────────┬────────────────────────────────┐
+  │ Key the code asks for │ Environment variable it checks │
+  ├───────────────────────┼────────────────────────────────┤
+  │ user.email            │ USER_EMAIL                     │
+  ├───────────────────────┼────────────────────────────────┤
+  │ user.password         │ USER_PASSWORD                  │
+  └───────────────────────┴────────────────────────────────┘
+
+  So Jenkins has to store the credentials securely and set those two variables
+  when it runs mvn test. This takes two steps.
+
+  Step 1: create the credential in Jenkins (once, in the UI).
+  Go to Manage Jenkins → Credentials → (your folder or global) → Add 
+  Credentials:
+  - Kind: Username with password
+  - Username: WEBMASTER
+  - Password: the new password
+  - ID: oim-qa-login (any name works; you'll use it in step 2)
+
+  Step 2: wrap the mvn test in the pod stage of JenkinsCI with withCredentials.
+  Currently the pod stage has:
+
+  catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+    sh """
+      mvn -B -q test \
+        ...
+    """
+  }
+
+  It would become:
+
+  catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+    withCredentials([usernamePassword(credentialsId: 'oim-qa-login',
+                                      usernameVariable: 'USER_EMAIL',
+                                      passwordVariable: 'USER_PASSWORD')]) {
+      sh """
+        mvn -B -q test \
+          ...   (same flags as today)
+      """
+    }
+  }
+
+  Inside that block Jenkins sets USER_EMAIL and USER_PASSWORD, and hides the
+  password as **** in the console log. LoginPage picks them up automatically.
+  The Discover Scenarios and Merge stages don't log in, so they don't need it.
+
+  You asked me not to touch JenkinsCI, so I haven't made this change. I can add
+  it if you give me the credential ID you create.
+
+  Summary of where the credentials come from:
+  - Your laptop: config/local/global.properties, or environment variables if you
+    prefer.
+  - Jenkins: the Jenkins credential store, set as USER_EMAIL / USER_PASSWORD.
+  - The repo: nowhere.
+
+  2. src/main/resources/global.properties is still needed
+
+  It's still the main settings file that everyone uses, including Jenkins. The
+  local file doesn't replace it. It only overrides the specific keys you write
+  in it, and everything else still comes from global.properties.
+
+  For example, if your local file contains only:
+
+  user.email=WEBMASTER
+  user.password=Secret123
+
+  then the values your tests use are:
+
+  ┌────────────────┬────────────────────────────┬───────────────────────────┐
+  │      Key       │         Value used         │        Comes from         │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ env            │ qa                         │ src/main/resources/global │
+  │                │                            │ .properties               │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ app.url.qa     │ https://oim.pre.mapfre.com │ src/main/resources/global │
+  │                │ .pe/#/login                │ .properties               │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ ui.spinner.tim │ 120000                     │ src/main/resources/global │
+  │ eoutMs         │                            │ .properties               │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ user.email     │ WEBMASTER                  │ your local file           │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ user.password  │ Secret123                  │ your local file           │
+  └────────────────┴────────────────────────────┴───────────────────────────┘
+
+  Keep all shared, non-secret settings in global.properties. Put in the local
+  file only secrets, plus any personal tweak you don't want to affect your
+  teammates. For example, if you add ui.spinner.timeoutMs=200000 there, the
+  longer timeout applies on your laptop only.
+
+  3. When to write \\
+
+  In a .properties file a single \ is an escape character, so the file reader
+  removes it or changes what follows. You only need to care if your password 
+  contains a backslash.
+
+  Suppose your real password is Mapfre\2025.
+
+  ┌────────────────────────────┬─────────────────────────────┬──────────────┐
+  │ What you write in the file │   What the code actually    │   Correct?   │
+  │                            │          receives           │              │
+  ├────────────────────────────┼─────────────────────────────┼──────────────┤
+  │ user.password=Mapfre\2025  │ Mapfre2025 (the \           │ ❌ login     │
+  │                            │ disappears)                 │ fails        │
+  ├────────────────────────────┼─────────────────────────────┼──────────────┤
+  │ user.password=Mapfre\\2025 │ Mapfre\2025                 │ ✅           │
+  └────────────────────────────┴─────────────────────────────┴──────────────┘
+
+  Two more cases, less common:
+  - A space at the start of the password. Write user.password=\ abc to get  abc.
+  - A password ending in a backslash, like abc\. Write abc\\. A single \ at the
+    end of a line means "continue on the next line".
+
+  Characters like ., !, @, #, $, %, = or : in the middle of the password don't
+  need escaping. Your old password Mapfre123. could be written exactly as it
+  was.
+
+  These escaping rules apply only to the file. Environment variables in Jenkins
+  take the value exactly as typed, with no escaping.
+
+✻ Crunched for 16s · done 6:29 PM
+
+※ recap: We're fixing the High-risk issues from the framework analysis, and the credentials, test-data and default-tag fixes are done and verified. Next, you create the Jenkins credential and send me its ID so I can add `withCredentials` to JenkinsCI. (disable recaps in /config)
+
+❯ can export this whole chat in pdf or html document?                           
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Write(chat-export.html)
+  ⎿  Wrote 331 lines to chat-export.html
+       1 <!DOCTYPE html>
+       2 <html lang="en">
+       4 <meta charset="UTF-8">
+       5 <meta name="viewport" content="width=device-width, initial-scale
+         =1">
+       7 <style>
+       8   :root {
+       9     --bg: #ffffff; --fg: #1d2127; --muted: #5d6673; --border: #d
+      10     --user-bg: #eef4ff; --user-border: #9bb8f0; --ai-bg: #ffffff
+         ;
+     … +528 lines (ctrl+o to expand)
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● Yes. I exported the conversation to both formats in a new docs\ folder in the
+  project:
+
+  - docs\chat-export.html: open it in any browser. It switches to a dark theme
+    if your system uses one.
+  - docs\chat-export.pdf: made by printing that HTML page with Microsoft Edge.
+    Edge confirmed it wrote the file (about 380 KB), but I couldn't open it here
+    to look at the pages, so check the layout when you open it.
+
+  What's in them:
+  - Your messages and my replies, in order: the analysis report, the fixes to
+    the High issues, the local credentials file, and the Jenkins,
+    global.properties and \\ answers.
+  - Tool activity (file reads, builds, checks) appears as a one-line summary per
+    turn, not the raw output.
+  - The earlier password value is replaced with …, so the exports don't copy the
+    old secret.
+
+  docs\ is inside the project folder, so delete it or add it to .gitignore if
+  you don't want it committed.
+
+  For a raw, word-for-word text transcript instead, type /export in Claude Code.
+  It saves the session to a file or copies it to the clipboard.
+
+✻ Cooked for 1m 31s · done 6:40 PM

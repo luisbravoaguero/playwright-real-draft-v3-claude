@@ -286,7 +286,9 @@ public class DocumentoSoatPage extends BasePage {
     public void cerrarVentanaError() {
         try {
             ventanaErrorOKButton.click();
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException e) {
+            log.debug("No se pudo cerrar la ventana de error (puede no estar visible): {}", e.toString());
+        }
     }
 */
 }

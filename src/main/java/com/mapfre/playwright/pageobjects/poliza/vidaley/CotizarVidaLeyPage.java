@@ -109,7 +109,7 @@ public class CotizarVidaLeyPage extends BasePage {
             );
 
             throw new AssertionError("No se pudo validar la pantalla 'Cotización póliza de vida ley'. " +
-                            "La navegación no llegó al estado esperado.");
+                            "La navegación no llegó al estado esperado.", e);
         }
 
         log.info("[VIDA_LEY][COTIZACION] Pantalla de Cotización Vida Ley lista");

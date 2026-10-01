@@ -89,7 +89,7 @@ public class PerfilClientePage extends BasePage {
         filasAplicaciones.first().waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
         sync();
         if(saludNoDeclarada.isChecked()){
-            System.out.println("El checkbox de salud con estado NO DECLARADA ya está seleccionado");
+            log.info("El checkbox de salud con estado NO DECLARADA ya está seleccionado");
         }else{
             clickAndSync(saludNoDeclarada);
         }
@@ -272,7 +272,7 @@ public class PerfilClientePage extends BasePage {
         filasAplicaciones.first().waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
         sync();
         if(vidaLeyNoDeclarada.isChecked()){
-            System.out.println("El checkbox de VIDA LEY con estado NO DECLARADA ya está seleccionado");
+            log.info("El checkbox de VIDA LEY con estado NO DECLARADA ya está seleccionado");
         }else{
             clickAndSync(vidaLeyNoDeclarada);
         }

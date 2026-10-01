@@ -10,7 +10,7 @@ import org.testng.annotations.DataProvider;
                 "com.mapfre.test.stepdefinitions",
                 "com.mapfre.test.hooks"
         },
-        tags = "@riesgosgenerales",
+        tags = "not @wip", // default; -Dcucumber.filter.tags lo sobrescribe
         plugin = {
                 //"summary",
                 "html:target/cucumber-reports/cucumber.html",

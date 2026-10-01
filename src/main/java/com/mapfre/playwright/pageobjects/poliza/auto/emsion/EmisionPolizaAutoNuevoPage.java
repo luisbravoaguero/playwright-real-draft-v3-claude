@@ -215,8 +215,7 @@ public class EmisionPolizaAutoNuevoPage extends BasePage {
         if (result.outcome() == FirstAppearanceRace.Outcome.ERROR) {
             String allVisibleText = modalRootPolizaEmitida.innerText();
             if(allVisibleText.contains("error") || allVisibleText.contains("Error") || allVisibleText.contains("ERROR")){
-                System.out.println("Se detectó un mensaje de error en el modal de emisión de póliza:");
-                System.out.println(allVisibleText);
+                log.warn("Se detectó un mensaje de error en el modal de emisión de póliza: {}", allVisibleText);
                 ElementAsserts.assertUIMessage("Proceso falló. UI error: " + modalRootPolizaEmitida.innerText()+ result.errorMessage()
                         + " (después de " + result.elapsedMs() + " ms)");
             }else{
@@ -232,8 +231,7 @@ public class EmisionPolizaAutoNuevoPage extends BasePage {
                         150                      // pollMs
                 );
                 if (resultAfterClose.outcome() == FirstAppearanceRace.Outcome.ERROR) {
-                    System.out.println("Se detectó un mensaje de error en el modal de emisión de póliza:");
-                    System.out.println(allVisibleText);
+                    log.warn("Se detectó un mensaje de error en el modal de emisión de póliza: {}", allVisibleText);
                     ElementAsserts.assertUIMessage("Proceso falló. UI error: " + modalRootPolizaEmitida.innerText()+ resultAfterClose.errorMessage()
                             + " (después de " + resultAfterClose.elapsedMs() + " ms)");
                 }

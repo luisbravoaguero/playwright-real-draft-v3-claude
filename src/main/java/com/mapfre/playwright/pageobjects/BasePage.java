@@ -1,6 +1,7 @@
 package com.mapfre.playwright.pageobjects;
 
 import com.mapfre.asserts.ElementAsserts;
+import com.mapfre.config.ConfigManager;
 import com.mapfre.config.EnvironmentConfig;
 import com.mapfre.exceptions.AssertExceptions;
 import com.mapfre.exceptions.FrameworkException;
@@ -618,7 +619,7 @@ public abstract class BasePage {
                 }
             }
         } catch (Exception e) {
-            throw new AssertExceptions("No es posible seleccionar los documentos requeridos: " + e.getMessage());
+            throw new AssertExceptions("No es posible seleccionar los documentos requeridos: " + e.getMessage(), e);
         }
     }
 
@@ -642,7 +643,7 @@ public abstract class BasePage {
 
         } catch (Exception e) {
             throw new AssertExceptions(
-                    "No es posible seleccionar los documentos requeridos: " + e.getMessage()
+                    "No es posible seleccionar los documentos requeridos: " + e.getMessage(), e
             );
         }
     }
@@ -656,54 +657,52 @@ public abstract class BasePage {
     }
 
     public void clickMenuOption(String menuName) {
-        // Force the menu to fully render
-        page.evaluate(
-                "() => { " +
-                        "  const menu = document.querySelector('inspec-menu'); " +
-                        "  if (menu) { " +
-                        "    menu.offsetHeight; " +  // Forces reflow/render
-                        "  } " +
-                        "}"
-        );
+        // Esperar a que la opcion exista en el DOM (en vez de una espera fija)
+        page.locator("inspec-menu li.link a")
+                .filter(new Locator.FilterOptions().setHasText(menuName))
+                .first()
+                .waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.ATTACHED));
 
-        page.waitForTimeout(1000);
-
-        // Now try the click
-        page.evaluate(
-                "() => { " +
+        // Click via JS: el nombre se pasa como argumento (no se concatena dentro del script)
+        Object clicked = page.evaluate(
+                "(name) => { " +
                         "  const menuItems = document.querySelectorAll('inspec-menu li.link a'); " +
-                        "  for (let item of menuItems) { " +
-                        "    if (item.textContent.includes('" + menuName + "')) { " +
-                        "      item.click(); " +
-                        "      return; " +
-                        "    } " +
+                        "  for (const item of menuItems) { " +
+                        "    if (item.textContent.includes(name)) { item.click(); return true; } " +
                         "  } " +
-                        "}"
+                        "  return false; " +
+                        "}",
+                menuName
         );
+        if (!Boolean.TRUE.equals(clicked)) {
+            throw new FrameworkException("No se encontró la opción de menú: " + menuName);
+        }
 
         page.waitForLoadState(LoadState.DOMCONTENTLOADED);
-        page.waitForTimeout(2500);
+        UiSync.waitForAppIdle(page);
 
         log.info("{} menu clicked", menuName);
     }
 
+    /**
+     * Espera fija heredada (antes era aleatoria entre 30% y 100% de largestValueMs).
+     * Ahora es determinista: largestValueMs * ui.legacyWait.scale (por defecto 1.0).
+     * Pendiente: reemplazar cada uso por una espera de estado (locator visible, spinner, etc.).
+     */
     public void waitRandomBetween(long largestValueMs) {
-        long smallestValueMs = (largestValueMs * 30) / 100;
-        waitRandomBetween(smallestValueMs, largestValueMs);
+        page.waitForTimeout(Math.round(largestValueMs * legacyWaitScale()));
     }
 
-    private void waitRandomBetween(long smallestValueMs, long largestValueMs) {
-        if (smallestValueMs > largestValueMs) {
-            throw new IllegalArgumentException(
-                    "El valor mínimo (" + smallestValueMs + "ms) no puede ser mayor que el máximo (" + largestValueMs + "ms)"
-            );
+    private static double legacyWaitScale() {
+        String value = ConfigManager.getGlobal("ui.legacyWait.scale");
+        if (value == null || value.isBlank()) return 1.0;
+        try {
+            double scale = Double.parseDouble(value.trim());
+            if (scale < 0) throw new NumberFormatException("negativo");
+            return scale;
+        } catch (NumberFormatException e) {
+            throw new FrameworkException("Valor inválido para ui.legacyWait.scale: " + value, e);
         }
-
-        long range = largestValueMs - smallestValueMs + 1;
-        long randomMs = smallestValueMs + (long) (Math.random() * range);
-
-        //log.info("Esperando {} ms (rango: {} - {} ms)", randomMs, smallestValueMs, largestValueMs);
-        page.waitForTimeout(randomMs);
     }
 
     protected void uploadFile(Locator locator, Path filePath) {

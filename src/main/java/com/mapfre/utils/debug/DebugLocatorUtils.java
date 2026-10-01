@@ -1,20 +1,24 @@
 package com.mapfre.utils.debug;
 
 import com.microsoft.playwright.Locator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class DebugLocatorUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(DebugLocatorUtils.class);
 
     private DebugLocatorUtils() {}
 
     public static void debugLocator(String name, Locator loc) {
-        System.out.println("\n---- " + name + " ----");
+        log.info("\n---- " + name + " ----");
 
         int count;
         try {
             count = loc.count();
-            System.out.println("count=" + count);
+            log.info("count=" + count);
         } catch (Exception e) {
-            System.out.println("count=ERROR: " + e.getMessage());
+            log.info("count=ERROR: " + e.getMessage());
             return;
         }
 
@@ -23,29 +27,29 @@ public final class DebugLocatorUtils {
         Locator first = loc.first();
 
         try {
-            System.out.println("visible=" + first.isVisible());
+            log.info("visible=" + first.isVisible());
         } catch (Exception e) {
-            System.out.println("visible=ERROR: " + e.getMessage());
+            log.info("visible=ERROR: " + e.getMessage());
         }
 
         try {
-            System.out.println("display=" + first.evaluate("e => getComputedStyle(e).display"));
-            System.out.println("visibility=" + first.evaluate("e => getComputedStyle(e).visibility"));
-            System.out.println("opacity=" + first.evaluate("e => getComputedStyle(e).opacity"));
+            log.info("display=" + first.evaluate("e => getComputedStyle(e).display"));
+            log.info("visibility=" + first.evaluate("e => getComputedStyle(e).visibility"));
+            log.info("opacity=" + first.evaluate("e => getComputedStyle(e).opacity"));
         } catch (Exception e) {
-            System.out.println("computedStyle=ERROR: " + e.getMessage());
+            log.info("computedStyle=ERROR: " + e.getMessage());
         }
 
         try {
-            System.out.println("bbox=" + first.boundingBox()); // null often means not visible
+            log.info("bbox=" + first.boundingBox()); // null often means not visible
         } catch (Exception e) {
-            System.out.println("bbox=ERROR: " + e.getMessage());
+            log.info("bbox=ERROR: " + e.getMessage());
         }
 
         try {
-            System.out.println("textContent=" + first.textContent());
+            log.info("textContent=" + first.textContent());
         } catch (Exception e) {
-            System.out.println("textContent=ERROR: " + e.getMessage());
+            log.info("textContent=ERROR: " + e.getMessage());
         }
     }
 }

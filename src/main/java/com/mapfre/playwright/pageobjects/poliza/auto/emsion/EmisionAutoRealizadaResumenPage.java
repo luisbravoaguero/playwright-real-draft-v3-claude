@@ -31,7 +31,7 @@ public class EmisionAutoRealizadaResumenPage extends BasePage {
 
         if (result.outcome() == FirstAppearanceRace.Outcome.ERROR) {
             String allVisibleText = resultadoMensajeError.innerText();
-            System.out.println(allVisibleText);
+            log.info(allVisibleText);
             ElementAsserts.assertUIMessage("Proceso falló. UI error: " + resultadoMensajeError.innerText()+ result.errorMessage()
                     + " (después de " + result.elapsedMs() + " ms)");
         }

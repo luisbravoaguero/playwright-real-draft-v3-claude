@@ -4,6 +4,8 @@ import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.AriaRole;
 import com.microsoft.playwright.options.WaitForSelectorState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,6 +13,8 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 public final class MaterialAutocomplete {
+
+    private static final Logger LOG = LoggerFactory.getLogger(MaterialAutocomplete.class);
 
     public enum AttemptKind { CLICK, HOVER_ENTER, KEYBOARD, FAILED }
 
@@ -342,7 +346,7 @@ public final class MaterialAutocomplete {
     private String safe(String s) { return s == null ? "" : s; }
 
     private void log(String msg) {
-        if (debug) System.out.println(msg);
+        if (debug) LOG.info(msg);
     }
     public AttemptKind selectAndValidateNotEmpty(String valorExacto, long timeoutMs, long quietMs) {
         Objects.requireNonNull(valorExacto, "valorExacto");

@@ -237,7 +237,9 @@
                         intentos++;
                     }
 
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    log.debug("Cierre de modal omitido: {}", e.toString());
+                }
                 page.waitForTimeout(400);
             }
             log.info("Fin manejo de modales (listener completo)");
@@ -427,7 +429,9 @@
 
                     log.info("Modal cerrado globalmente");
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.debug("Cierre de modal omitido: {}", e.toString());
+            }
         }
         private String generarPlacaAuto() {
 

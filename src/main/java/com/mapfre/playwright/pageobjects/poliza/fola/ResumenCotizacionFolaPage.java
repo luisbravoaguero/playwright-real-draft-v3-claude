@@ -52,10 +52,10 @@ public class ResumenCotizacionFolaPage extends BasePage {
     public void assertLoaded() {
         ElementAsserts.assertVisible(title, "TITULO Cotización DEBE SER VISIBLE");
         String titulo = title.innerText();
-        System.out.println("Titulo capturado: " + titulo);
+        log.info("Titulo capturado: " + titulo);
         ElementAsserts.assertVisible(nroCotizacion, "El número de cotización no apareció.");
         String numero = nroCotizacion.innerText().trim();
-        System.out.println("Número de cotización capturado: " + numero);
+        log.info("Número de cotización capturado: " + numero);
     }
     public void clickEmitirPoliza() {
         ElementAsserts.assertVisible(emitirPolizaButton, "BOTON Emitir poliza DEBE SER VISIBLE EN FOLA");

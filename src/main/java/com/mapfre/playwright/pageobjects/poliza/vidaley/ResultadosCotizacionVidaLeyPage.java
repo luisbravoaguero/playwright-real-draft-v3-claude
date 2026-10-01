@@ -63,7 +63,7 @@ public class ResultadosCotizacionVidaLeyPage extends BasePage {
             throw new AssertionError(
                     "No se pudo aceptar la cotización. " +
                             "El botón 'Aceptar' no estuvo disponible. " +
-                            "Revise si la cotización fue generada correctamente."
+                            "Revise si la cotización fue generada correctamente.", e
             );
         }
 
@@ -132,7 +132,7 @@ public class ResultadosCotizacionVidaLeyPage extends BasePage {
             );
             throw new AssertionError(
                     "No se pudo solicitar el reajuste de tasa. " +
-                            "El botón 'Solicitar reajuste' no estuvo disponible."
+                            "El botón 'Solicitar reajuste' no estuvo disponible.", e
             );
         }
         btnSolicitarReajuste.scrollIntoViewIfNeeded();

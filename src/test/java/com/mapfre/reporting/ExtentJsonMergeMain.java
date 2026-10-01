@@ -5,8 +5,12 @@ import com.aventstack.extentreports.reporter.ExtentSparkReporter;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ExtentJsonMergeMain {
+    private static final Logger log = LoggerFactory.getLogger(ExtentJsonMergeMain.class);
+
     public static void main(String[] args) throws Exception {
         String inDir = System.getProperty("extent.merge.input", "target/extent-archives");
         String outDir = System.getProperty("extent.merge.output", "target/extent-merged");
@@ -29,6 +33,6 @@ public class ExtentJsonMergeMain {
         }
 
         extent.flush();
-        System.out.println("Merged extent: " + Path.of(outDir, "index.html"));
+        log.info("Merged extent: {}", Path.of(outDir, "index.html"));
     }
 }

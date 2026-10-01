@@ -167,9 +167,9 @@ public class DocumentosSctrPage extends BasePage {
 
     public void validateDateRange() {
         LocalDateTime fechaA = DateUtils.parseDateTime(fechaInicioInput.inputValue().trim()+" 00:00:00");
-        System.out.println("Fecha de Inicio: "+fechaInicioInput.inputValue().trim()+" 00:00:00");
+        log.info("Fecha de Inicio: "+fechaInicioInput.inputValue().trim()+" 00:00:00");
         LocalDateTime fechaC = DateUtils.parseDateTime(fechaFinInput.inputValue().trim()+" 23:59:59");
-        System.out.println("Fecha Fin: "+fechaFinInput.inputValue().trim()+" 23:59:59");
+        log.info("Fecha Fin: "+fechaFinInput.inputValue().trim()+" 23:59:59");
 
         //validarTodasLasFechasEnRango(fechaA, fechaC);
         while (true) {
@@ -196,7 +196,7 @@ public class DocumentosSctrPage extends BasePage {
             }
             clickAndSync(nextButton);
         }
-        System.out.println("Validación completada: Todas las fechas en todas las páginas están dentro del rango.");
+        log.info("Validación completada: Todas las fechas en todas las páginas están dentro del rango.");
     }
 
     // ====================== Extracción (página actual) ======================

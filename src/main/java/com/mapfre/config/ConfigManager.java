@@ -4,11 +4,17 @@ import com.mapfre.exceptions.FrameworkException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Properties;
 
 public final class ConfigManager {
     private static final Properties DRIVER_PROPS = new Properties();
     private static final Properties GLOBAL_PROPS = new Properties();
+    // Overrides locales opcionales (credenciales, etc.). La carpeta config/local/ esta en .gitignore
+    private static final Path LOCAL_GLOBAL_PROPS = Path.of("config", "local", "global.properties");
     private static boolean loaded = false;
 
     private ConfigManager() {}
@@ -17,7 +23,17 @@ public final class ConfigManager {
         if (loaded) return;
         loadProps("driver.properties", DRIVER_PROPS);
         loadProps("global.properties", GLOBAL_PROPS);
+        loadOptionalFile(LOCAL_GLOBAL_PROPS, GLOBAL_PROPS);
         loaded = true;
+    }
+
+    private static void loadOptionalFile(Path file, Properties target) {
+        if (!Files.isRegularFile(file)) return;
+        try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            target.load(in);
+        } catch (IOException e) {
+            throw new FrameworkException("No se pudo cargar el archivo local: " + file.toAbsolutePath(), e);
+        }
     }
 
     private static void loadProps(String resourceName, Properties target) {
@@ -62,6 +78,12 @@ public final class ConfigManager {
 
     public static boolean isMaximize() {
         return Boolean.parseBoolean(get(DRIVER_PROPS, "maximize", "true"));
+    }
+
+    // true (por defecto): Playwright + navegador nuevos en cada escenario (comportamiento original).
+    // false: un navegador por hilo reutilizado entre escenarios, con contexto nuevo por escenario.
+    public static boolean isBrowserPerScenario() {
+        return Boolean.parseBoolean(get(DRIVER_PROPS, "browser.perScenario", "true"));
     }
 
     public static double getDefaultTimeoutMs() {

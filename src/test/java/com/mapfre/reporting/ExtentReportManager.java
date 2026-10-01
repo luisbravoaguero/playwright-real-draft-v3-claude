@@ -14,6 +14,8 @@ public final class ExtentReportManager {
 
     private static final ThreadLocal<ExtentTest> TL_TEST = new ThreadLocal<>();
     private static final ThreadLocal<ExtentTest> TL_STEP = new ThreadLocal<>();
+    // Screenshot del ultimo step (lo toma ExtentCucumberStepsPlugin y lo reutiliza Hooks.@AfterStep: una sola captura por step)
+    private static final ThreadLocal<String> TL_LAST_STEP_SHOT = new ThreadLocal<>();
 
     private ExtentReportManager() {}
 
@@ -79,8 +81,18 @@ public final class ExtentReportManager {
         if (extent != null) extent.flush();
     }
 
+    public static void setLastStepScreenshot(String base64) { TL_LAST_STEP_SHOT.set(base64); }
+
+    /** Devuelve y limpia el screenshot del ultimo step (null si no hay). */
+    public static String takeLastStepScreenshot() {
+        String base64 = TL_LAST_STEP_SHOT.get();
+        TL_LAST_STEP_SHOT.remove();
+        return base64;
+    }
+
     public static void clearTest() {
         TL_STEP.remove();
         TL_TEST.remove();
+        TL_LAST_STEP_SHOT.remove();
     }
 }

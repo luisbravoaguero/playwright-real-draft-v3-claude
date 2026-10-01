@@ -84,7 +84,7 @@ public class DuracionDeclaracionSeguroPage extends BasePage {
 
             throw new AssertionError(
                     "No se pudo validar el Paso 2 (Duración y declaración del seguro). " +
-                            "El flujo no llegó al estado esperado."
+                            "El flujo no llegó al estado esperado.", e
             );
         }
 
