@@ -5,6 +5,7 @@ import com.mapfre.config.ConfigManager;
 import com.mapfre.config.EnvironmentConfig;
 import com.mapfre.exceptions.AssertExceptions;
 import com.mapfre.exceptions.FrameworkException;
+import com.mapfre.playwright.driver.PopupHandler;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.mapfre.utils.UiSync;
@@ -40,6 +41,15 @@ public abstract class BasePage {
     protected void clickAndSync(Locator locator) {
         locator.click();
         UiSync.waitForAppIdle(page);
+    }
+
+    /**
+     * Hace clic en un elemento que abre una nueva pestaña y la devuelve ya activa
+     * (los steps siguientes trabajan sobre ella via PageProvider). Ej:
+     * {@code return new DocumentoPopupPage(clickAndCapturePopup(btnVerDocumento));}
+     */
+    protected Page clickAndCapturePopup(Locator trigger) {
+        return PopupHandler.abrir(page, trigger::click);
     }
 
     protected void clickForcedAndSync(Locator locator) {

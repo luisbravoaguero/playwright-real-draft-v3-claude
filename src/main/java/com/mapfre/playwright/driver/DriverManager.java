@@ -19,6 +19,8 @@ public final class DriverManager {
     private static final ThreadLocal<Browser> TL_BROWSER = new ThreadLocal<>();
     private static final ThreadLocal<BrowserContext> TL_CONTEXT = new ThreadLocal<>();
     private static final ThreadLocal<Page> TL_PAGE = new ThreadLocal<>();
+    /** Pestaña sobre la que trabajan los steps (la principal o un popup abierto con {@link PopupHandler}). */
+    private static final ThreadLocal<Page> TL_ACTIVE_PAGE = new ThreadLocal<>();
 
     private static final Queue<Playwright> ALL_PLAYWRIGHTS = new ConcurrentLinkedQueue<>();
 
@@ -33,12 +35,25 @@ public final class DriverManager {
     static void setScenario(BrowserContext ctx, Page pg) {
         TL_CONTEXT.set(ctx);
         TL_PAGE.set(pg);
+        TL_ACTIVE_PAGE.set(pg);
     }
 
     public static Playwright playwright() { return TL_PLAYWRIGHT.get(); }
     public static Browser browser() { return TL_BROWSER.get(); }
     public static BrowserContext context() { return TL_CONTEXT.get(); }
-    public static Page page() { return TL_PAGE.get(); }
+
+    /** Pestaña activa: la principal, o el popup activado con {@link PopupHandler}. */
+    public static Page page() {
+        Page active = TL_ACTIVE_PAGE.get();
+        return active != null ? active : TL_PAGE.get();
+    }
+
+    /** Pestaña principal del escenario (la creada en {@link DriverFactory#init()}). */
+    public static Page mainPage() { return TL_PAGE.get(); }
+
+    static void activate(Page pg) { TL_ACTIVE_PAGE.set(pg); }
+
+    static void activateMain() { TL_ACTIVE_PAGE.set(TL_PAGE.get()); }
 
     /** Fin de escenario: cierra Page y Context. Nunca lanza excepcion (no debe ocultar el fallo real del test). */
     public static void cleanup() {
@@ -46,6 +61,8 @@ public final class DriverManager {
             closeQuietly("page", TL_PAGE.get());
             closeQuietly("context", TL_CONTEXT.get());
         } finally {
+            // los popups se cierran junto con el context
+            TL_ACTIVE_PAGE.remove();
             TL_PAGE.remove();
             TL_CONTEXT.remove();
         }
