@@ -3,6 +3,7 @@ package com.mapfre.playwright.driver;
 import com.mapfre.config.ConfigManager;
 import com.mapfre.exceptions.FrameworkException;
 import com.mapfre.utils.Checkpoint;
+import com.mapfre.utils.UiSync;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.LoadState;
@@ -27,7 +28,10 @@ public final class PopupHandler {
      *
      * @param opener  pestaña desde la que se dispara el popup
      * @param trigger accion que lo abre (ej. {@code () -> boton.click()})
-     * @return el popup ya cargado (DOMContentLoaded)
+     * El popup usa su propio timeout ({@code ui.popup.pageTimeoutMs}) para acciones, navegacion y aserciones
+     * de {@link com.mapfre.asserts.ElementAsserts}; las demas pestañas no se ven afectadas.
+     *
+     * @return el popup ya cargado (DOMContentLoaded) y sin spinner ({@link UiSync#waitForAppIdle(Page)})
      */
     public static Page abrir(Page opener, Runnable trigger) {
         Objects.requireNonNull(opener, "opener");
@@ -41,8 +45,13 @@ public final class PopupHandler {
             throw new FrameworkException("No se abrio la nueva pestaña en " + timeoutMs + " ms", e);
         }
 
-        popup.setDefaultTimeout(ConfigManager.getDefaultTimeoutMs());
+        double pageTimeoutMs = PageTimeouts.parseMs("ui.popup.pageTimeoutMs", ConfigManager.getDefaultTimeoutMs());
+        popup.setDefaultTimeout(pageTimeoutMs);
+        popup.setDefaultNavigationTimeout(pageTimeoutMs);
+        PageTimeouts.set(popup, pageTimeoutMs);
         popup.waitForLoadState(LoadState.DOMCONTENTLOADED);
+        // la app (SPA) sigue arrancando despues de DOMContentLoaded: esperar a que terminen las olas de spinner
+        UiSync.waitForAppIdle(popup);
         // si la pestaña se cierra sola, volvemos a la principal
         popup.onClose(p -> {
             if (DriverManager.page() == p) {

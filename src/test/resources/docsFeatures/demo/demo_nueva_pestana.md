@@ -4,6 +4,10 @@
 Ejemplo de referencia (sitio público, sin VPN) de un flujo que abre una **nueva pestaña** y trabaja sobre ella
 con `PopupHandler` (`page.waitForPopup`). Sirve como modelo para los escenarios OIM que abren pestañas.
 
+La nueva pestaña tiene su propio timeout de acciones y aserciones (`ui.popup.pageTimeoutMs`, 120 s por defecto);
+la pestaña principal sigue con `ui.assert.timeoutMs` (30 s). Para que el timeout de la pestaña aplique, las
+aserciones del popup se hacen con `ElementAsserts` (o pasando `PageTimeouts.assertTimeoutFor(locator)`).
+
 ### 🧭 Flujo cubierto
 1. Apertura de la página de práctica (`demo.url.letskodeit`)
 2. Selección de un auto en el combo *Select Class Example* (pestaña principal)

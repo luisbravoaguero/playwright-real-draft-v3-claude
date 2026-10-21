@@ -2,9 +2,11 @@ package com.mapfre.playwright.pageobjects.demo.letskodeit;
 
 import com.mapfre.asserts.ElementAsserts;
 import com.mapfre.exceptions.AssertExceptions;
+import com.mapfre.playwright.driver.PageTimeouts;
 import com.mapfre.playwright.pageobjects.BasePage;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.assertions.LocatorAssertions;
 import com.microsoft.playwright.options.AriaRole;
 import com.microsoft.playwright.options.SelectOption;
 
@@ -42,7 +44,7 @@ public class CursosPage extends BasePage {
     }
 
     public void assertLoaded() {
-        assertThat(page).hasURL(Pattern.compile("/courses"));
+        ElementAsserts.assertUrl(page, Pattern.compile("/courses"), "LA NUEVA PESTAÑA DEBE ESTAR EN /courses");
         ElementAsserts.assertContainsText(titulo, "All Courses", "TITULO All Courses DEBE SER VISIBLE");
     }
 
@@ -68,10 +70,13 @@ public class CursosPage extends BasePage {
     /** Espera (con re-intentos) a que todos los cursos listados contengan el texto, y que haya al menos uno. */
     public void assertResultadosContienen(String curso) {
         ElementAsserts.assertTextHasValue(buscarInput, curso, "EL CAMPO BUSCAR DEBE CONTENER " + curso);
+        // timeout de la pestaña (popup), no el global
+        double timeoutMs = PageTimeouts.assertTimeoutFor(titulosCursos);
         try {
             // filtro con String = subcadena sin distinguir mayusculas (no usar Pattern.quote: \Q..\E no existe en JS)
-            assertThat(titulosCursos.filter(new Locator.FilterOptions().setHasNotText(curso))).hasCount(0);
-            assertThat(titulosCursos.first()).isVisible();
+            assertThat(titulosCursos.filter(new Locator.FilterOptions().setHasNotText(curso)))
+                    .hasCount(0, new LocatorAssertions.HasCountOptions().setTimeout(timeoutMs));
+            assertThat(titulosCursos.first()).isVisible(new LocatorAssertions.IsVisibleOptions().setTimeout(timeoutMs));
         } catch (AssertionError | RuntimeException e) {
             throw new AssertExceptions("LOS RESULTADOS DE LA BUSQUEDA DEBEN CONTENER SOLO CURSOS DE '" + curso + "'", e);
         }

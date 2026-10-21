@@ -1,9 +1,11 @@
 package com.mapfre.asserts;
 
 import com.mapfre.exceptions.AssertExceptions;
+import com.mapfre.playwright.driver.PageTimeouts;
 import com.microsoft.playwright.Locator;
+import com.microsoft.playwright.Page;
 import com.microsoft.playwright.assertions.LocatorAssertions;
-import com.microsoft.playwright.assertions.PlaywrightAssertions;
+import com.microsoft.playwright.assertions.PageAssertions;
 import java.util.regex.Pattern;
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
@@ -13,19 +15,20 @@ import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertTha
      */
 
 public final class ElementAsserts {
-        // Configuración global para todas las aserciones de esta clase
-        static {
-            // 30 segundos es un estándar robusto
-            PlaywrightAssertions.setDefaultAssertionTimeout(30000);
-        }
+        // El timeout de cada aserción es el de la pestaña del locator (PageTimeouts): ui.popup.pageTimeoutMs en
+        // popups abiertos con PopupHandler, ui.assert.timeoutMs en el resto. No cambiar el timeout global.
 
         private ElementAsserts() {
+        }
+
+        private static double timeout(Locator locator) {
+            return PageTimeouts.assertTimeoutFor(locator);
         }
 
         public static void assertVisible(Locator locator, String message) {
             try {
                 // Playwright hará re-try automático hasta que sea visible o expire el timeout
-                assertThat(locator).isVisible();
+                assertThat(locator).isVisible(new LocatorAssertions.IsVisibleOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 // Transformamos el error técnico en una excepción de negocio
                 throw new AssertExceptions(message + " - El elemento no se hizo visible.", e);
@@ -34,7 +37,8 @@ public final class ElementAsserts {
 
         public static void assertContainsText(Locator locator, String text, String message) {
             try {
-                assertThat(locator).containsText(text);
+                assertThat(locator).containsText(text,
+                        new LocatorAssertions.ContainsTextOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'", e);
             }
@@ -74,7 +78,7 @@ public final class ElementAsserts {
 
         public static void assertHidden(Locator locator, String message) {
             try {
-                assertThat(locator).isHidden();
+                assertThat(locator).isHidden(new LocatorAssertions.IsHiddenOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El elemento debería estar oculto pero permanece visible.", e);
             }
@@ -82,7 +86,7 @@ public final class ElementAsserts {
 
         public static void assertEnabled(Locator locator, String message) {
             try {
-                assertThat(locator).isEnabled();
+                assertThat(locator).isEnabled(new LocatorAssertions.IsEnabledOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El elemento está deshabilitado (Disabled).", e);
             }
@@ -90,7 +94,7 @@ public final class ElementAsserts {
 
         public static void assertFilled(Locator locator, String message) {
             try {
-                assertThat(locator).not().isEmpty();
+                assertThat(locator).not().isEmpty(new LocatorAssertions.IsEmptyOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El elemento está vacío.", e);
             }
@@ -107,7 +111,8 @@ public final class ElementAsserts {
 
         public static void assertTextContains(Locator locator, String expectedPart, String message) {
             try {
-                assertThat(locator).containsText(expectedPart);
+                assertThat(locator).containsText(expectedPart,
+                        new LocatorAssertions.ContainsTextOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " | No se encontró el texto esperado: " + expectedPart, e);
             }
@@ -128,7 +133,7 @@ public final class ElementAsserts {
 
         public static void assertTextMatches(Locator locator, Pattern pattern, String message) {
             try {
-                assertThat(locator).hasText(pattern);
+                assertThat(locator).hasText(pattern, new LocatorAssertions.HasTextOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(
                         message + " - El texto de la UI no cumple el patrón esperado: " + pattern.pattern(), e
@@ -138,7 +143,8 @@ public final class ElementAsserts {
 
         public static void assertTextHasValue(Locator actualValue, String expectedValue, String message) {
             try {
-                assertThat(actualValue).hasValue(expectedValue);
+                assertThat(actualValue).hasValue(expectedValue,
+                        new LocatorAssertions.HasValueOptions().setTimeout(timeout(actualValue)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(
                         message + " - El elemento no tiene el valor: " + expectedValue, e
@@ -161,7 +167,7 @@ public final class ElementAsserts {
 
         public static void assertChecked(Locator locator, String message) {
             try {
-                assertThat(locator).isChecked();
+                assertThat(locator).isChecked(new LocatorAssertions.IsCheckedOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El checkbox no está marcado.", e);
             }
@@ -169,7 +175,7 @@ public final class ElementAsserts {
 
         public static void assertIsNotChecked(Locator locator, String message) {
             try {
-                assertThat(locator).not().isChecked();
+                assertThat(locator).not().isChecked(new LocatorAssertions.IsCheckedOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El checkbox debe estar desmarcado.", e);
             }
@@ -177,7 +183,8 @@ public final class ElementAsserts {
 
         public static void assertCellNotEmpty(Locator cellLocator, String cellDescription) {
             try {
-                assertThat(cellLocator).not().isEmpty();
+                assertThat(cellLocator).not().isEmpty(
+                        new LocatorAssertions.IsEmptyOptions().setTimeout(timeout(cellLocator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(cellDescription + " - La celda está vacía, se esperaba un valor.", e);
             }
@@ -211,15 +218,26 @@ public final class ElementAsserts {
 
         public static void assertContainsPatternText(Locator locator, String text, String message) {
             try {
-                assertThat(locator).containsText(Pattern.compile(text));
+                assertThat(locator).containsText(Pattern.compile(text),
+                        new LocatorAssertions.ContainsTextOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'", e);
             }
         }
 
+        public static void assertUrl(Page page, Pattern pattern, String message) {
+            try {
+                assertThat(page).hasURL(pattern,
+                        new PageAssertions.HasURLOptions().setTimeout(PageTimeouts.assertTimeoutFor(page)));
+            } catch (Exception | AssertionError e) {
+                throw new AssertExceptions(message + " - La URL no cumple el patrón esperado: " + pattern.pattern(), e);
+            }
+        }
+
         public static void assertContainsTextIgonoreCase(Locator locator, String text, String message) {
             try {
-                assertThat(locator).containsText(Pattern.compile(text, Pattern.CASE_INSENSITIVE));
+                assertThat(locator).containsText(Pattern.compile(text, Pattern.CASE_INSENSITIVE),
+                        new LocatorAssertions.ContainsTextOptions().setTimeout(timeout(locator)));
             } catch (Exception | AssertionError e) {
                 throw new AssertExceptions(message + " - El elemento no contiene el texto: '" + text + "'", e);
             }

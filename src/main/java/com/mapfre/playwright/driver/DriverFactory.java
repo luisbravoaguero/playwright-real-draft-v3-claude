@@ -1,6 +1,7 @@
 package com.mapfre.playwright.driver;
 
 import com.microsoft.playwright.*;
+import com.microsoft.playwright.assertions.PlaywrightAssertions;
 import com.mapfre.config.ConfigManager;
 import com.mapfre.exceptions.FrameworkException;
 
@@ -27,6 +28,8 @@ public final class DriverFactory {
         BrowserContext context = DriverManager.browser().newContext(BrowserOptions.contextOptions());
         Page page = context.newPage();
         page.setDefaultTimeout(ConfigManager.getDefaultTimeoutMs());
+        // valor global de respaldo para assertThat directos; ElementAsserts usa el timeout de cada pestaña (PageTimeouts)
+        PlaywrightAssertions.setDefaultAssertionTimeout(PageTimeouts.defaultAssertTimeoutMs());
 
         DriverManager.setScenario(context, page);
     }
