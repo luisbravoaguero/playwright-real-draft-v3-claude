@@ -8,6 +8,7 @@ import com.mapfre.exceptions.FrameworkException;
 import com.mapfre.playwright.driver.PopupHandler;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
+import com.mapfre.utils.AppReadiness;
 import com.mapfre.utils.UiSync;
 import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.LoadState;
@@ -33,9 +34,10 @@ public abstract class BasePage {
         UiSync.waitForAppIdle(this.page);
     }
 
+    // DOMContentLoaded + spinner, con error por fase (ver AppReadiness). Las paginas con una señal de "lista"
+    // propia (ej. LoginPage) la sobrescriben para esperar tambien a que la app renderice.
     public void navigate() {
-        page.navigate(EnvironmentConfig.getAppUrl());
-        waitAppReady();
+        AppReadiness.navegar(page, EnvironmentConfig.getAppUrl(), null);
     }
 
     protected void clickAndSync(Locator locator) {

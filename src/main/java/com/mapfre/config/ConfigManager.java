@@ -106,4 +106,9 @@ public final class ConfigManager {
     public static String getGlobal(String key) {
         return get(GLOBAL_PROPS, key, null);
     }
+
+    // Igual que getGlobal pero sobre driver.properties (respeta -D y variables de entorno).
+    public static String getDriver(String key) {
+        return get(DRIVER_PROPS, key, null);
+    }
 }

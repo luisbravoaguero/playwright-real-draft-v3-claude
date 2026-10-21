@@ -3,7 +3,9 @@ package com.mapfre.playwright.pageobjects;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.mapfre.config.ConfigManager;
+import com.mapfre.config.EnvironmentConfig;
 import com.mapfre.exceptions.FrameworkException;
+import com.mapfre.utils.AppReadiness;
 import com.microsoft.playwright.options.AriaRole;
 
 public class LoginPage extends BasePage {
@@ -18,6 +20,12 @@ public class LoginPage extends BasePage {
         this.usernameInput = page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Ingrese su usuario"));
         this.passwordInput = page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Ingresa tu contraseña"));
         this.loginButton = page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Ingresar"));
+    }
+
+    // La señal real de que la SPA arranco es el campo usuario: distingue pantalla en blanco / spinner / otro contenido
+    @Override
+    public void navigate() {
+        AppReadiness.navegar(page, EnvironmentConfig.getAppUrl(), usernameInput);
     }
 
     public void loginOim() {

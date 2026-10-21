@@ -44,7 +44,7 @@ public final class PageTimeouts {
     }
 
     /** Lee una propiedad global en ms; si falta o es invalida devuelve el valor por defecto. */
-    static double parseMs(String key, double defaultMs) {
+    public static double parseMs(String key, double defaultMs) {
         String value = ConfigManager.getGlobal(key);
         try {
             return value == null || value.isBlank() ? defaultMs : Double.parseDouble(value.trim());

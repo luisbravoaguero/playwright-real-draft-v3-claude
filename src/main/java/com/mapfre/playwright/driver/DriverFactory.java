@@ -4,6 +4,7 @@ import com.microsoft.playwright.*;
 import com.microsoft.playwright.assertions.PlaywrightAssertions;
 import com.mapfre.config.ConfigManager;
 import com.mapfre.exceptions.FrameworkException;
+import com.mapfre.utils.diagnostics.ActivityRecorder;
 
 public final class DriverFactory {
     private DriverFactory() {}
@@ -22,11 +23,37 @@ public final class DriverFactory {
         if (!reusable) {
             DriverManager.closeThreadBrowser(); // descarta instancias previas/desconectadas del hilo
             Playwright pw = Playwright.create();
-            DriverManager.setThreadBrowser(pw, launchBrowser(pw));
+            Browser launched;
+            try {
+                launched = launchBrowser(pw);
+            } catch (RuntimeException e) {
+                // sin esto el proceso driver de Playwright queda vivo (aun no esta registrado en DriverManager)
+                try {
+                    pw.close();
+                } catch (Exception closeError) {
+                    e.addSuppressed(closeError);
+                }
+                throw e;
+            }
+            DriverManager.setThreadBrowser(pw, launched);
         }
 
-        BrowserContext context = DriverManager.browser().newContext(BrowserOptions.contextOptions());
-        Page page = context.newPage();
+        BrowserContext context = DriverManager.browser().newContext(BrowserOptions.contextOptions(DriverManager.browser()));
+        // antes de newPage(): asi se registran tambien la pestaña principal y sus primeras peticiones
+        ActivityRecorder.attach(context);
+        TraceRecorder.iniciar(context);
+        Page page;
+        try {
+            page = context.newPage();
+        } catch (RuntimeException e) {
+            // el context aun no esta en DriverManager: cleanup() no lo cerraria (navegador reutilizado)
+            try {
+                context.close();
+            } catch (Exception closeError) {
+                e.addSuppressed(closeError);
+            }
+            throw e;
+        }
         page.setDefaultTimeout(ConfigManager.getDefaultTimeoutMs());
         // valor global de respaldo para assertThat directos; ElementAsserts usa el timeout de cada pestaña (PageTimeouts)
         PlaywrightAssertions.setDefaultAssertionTimeout(PageTimeouts.defaultAssertTimeoutMs());
@@ -47,7 +74,6 @@ public final class DriverFactory {
             case "webkit":
                 return pw.webkit().launch(launchOptions);
             default:
-                pw.close();
                 throw new FrameworkException("Navegador no compatible: " + browserName);
         }
     }

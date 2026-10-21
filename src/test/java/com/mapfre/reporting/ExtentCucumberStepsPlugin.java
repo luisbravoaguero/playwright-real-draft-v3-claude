@@ -66,6 +66,19 @@ public class ExtentCucumberStepsPlugin implements ConcurrentEventListener {
         Result result = event.getResult();
         Status status = result.getStatus();
 
+        // Solo PASSED/FAILED cambian la pantalla: tras un fallo, cada step SKIPPED tomaria otra captura igual
+        // (y si la pagina esta colgada, cada una esperaria su timeout)
+        if (status != Status.PASSED && status != Status.FAILED) {
+            try {
+                if (status == Status.SKIPPED) stepNode.skip("Skipped");
+                else stepNode.info("Status: " + status.name());
+            } finally {
+                currentStepNode.remove();
+                ExtentReportManager.clearStepNode();
+            }
+            return;
+        }
+
         try {
             // Always attach screenshot after each step
             String base64 = ScreenshotUtils.screenshotBase64();
@@ -74,12 +87,8 @@ public class ExtentCucumberStepsPlugin implements ConcurrentEventListener {
 
             if (status == Status.PASSED) {
                 stepNode.pass("Passed", media);
-            } else if (status == Status.SKIPPED) {
-                stepNode.skip("Skipped", media);
-            } else if (status == Status.FAILED) {
-                stepNode.fail(result.getError(), media);
             } else {
-                stepNode.info("Status: " + status.name(), media);
+                stepNode.fail(result.getError(), media);
             }
 
         } catch (Exception e) {

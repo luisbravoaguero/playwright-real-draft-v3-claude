@@ -2,7 +2,9 @@ package com.mapfre.utils;
 
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.WaitForSelectorState;
+import com.mapfre.utils.diagnostics.PageDiagnostics;
 import com.mapfre.config.ConfigManager;
 import com.mapfre.exceptions.FrameworkException;
 import com.mapfre.playwright.driver.DriverManager;
@@ -42,13 +44,17 @@ public final class UiSync {
         while (true) {
             long remaining = deadline - System.currentTimeMillis();
             if (remaining <= 0) {
-                throw new FrameworkException("Timed out waiting for spinner waves to finish after " + timeoutMs + "ms");
+                throw spinnerAtascado(spinner, timeoutMs, null);
             }
 
             // Wait for spinner to become hidden (or detached).
-            spinner.waitFor(new Locator.WaitForOptions()
-                    .setState(WaitForSelectorState.HIDDEN)
-                    .setTimeout((double) remaining));
+            try {
+                spinner.waitFor(new Locator.WaitForOptions()
+                        .setState(WaitForSelectorState.HIDDEN)
+                        .setTimeout((double) remaining));
+            } catch (TimeoutError e) {
+                throw spinnerAtascado(spinner, timeoutMs, e);
+            }
 
             // Periodo de silencio: dar tiempo a que aparezca la "ola 2" después de que desaparezca la ola 1.
             // (Usamos intencionalmente la espera de Playwright, no Thread.sleep)
@@ -62,6 +68,12 @@ public final class UiSync {
             // Permaneció oculta durante el período de inactividad -> la aplicación está "inactiva"
             return;
         }
+    }
+
+    private static FrameworkException spinnerAtascado(Locator spinner, int timeoutMs, Throwable causa) {
+        String msg = "[" + PageDiagnostics.Fase.SPINNER_ATASCADO + "] Las olas de spinner no terminaron en " + timeoutMs
+                + " ms.\n" + PageDiagnostics.capturar(spinner.page());
+        return new FrameworkException(msg, causa);
     }
 
     private static int parseIntOrDefault(String value, int defaultVal) {

@@ -2,17 +2,18 @@ package com.mapfre.test.hooks;
 
 import com.mapfre.playwright.driver.DriverFactory;
 import com.mapfre.playwright.driver.DriverManager;
+import com.mapfre.playwright.driver.TraceRecorder;
 import com.mapfre.reporting.ArtifactSinks;
 import com.mapfre.reporting.ExtentReportManager;
 import com.mapfre.reporting.ReportLogger;
 import com.mapfre.test.reporting.CucumberExtentArtifactSink;
-import com.mapfre.utils.ScreenshotUtils;
 import com.mapfre.utils.testdata.SeedManager;
 import io.cucumber.java.*;
 import io.cucumber.java.Scenario;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.util.Base64;
 
 public class Hooks {
@@ -64,17 +65,16 @@ public class Hooks {
     @After
     public void afterScenario(Scenario scenario) {
         try {
+            // La captura del step fallido ya la adjuntan ExtentCucumberStepsPlugin + @AfterStep (no se toma otra)
             if (scenario.isFailed()) {
-                // Keep Cucumber failure screenshot if you want
-                try {
-                    String base64 = ScreenshotUtils.screenshotBase64();
-                    scenario.attach(Base64.getDecoder().decode(base64), "image/png", "failure-screenshot");
-                } catch (Exception e) {
-                    log.warn("No se pudo capturar la pantalla del fallo: {}", e.toString());
-                }
                 ReportLogger.fail("Scenario failed: " + scenario.getName());
             } else {
                 ReportLogger.pass("Scenario passed: " + scenario.getName());
+            }
+            // antes de cleanup(): al cerrar el context se pierde el trace
+            Path trace = TraceRecorder.detener(scenario.isFailed(), scenario.getName());
+            if (trace != null) {
+                ReportLogger.info("Trace Playwright: " + trace.toAbsolutePath() + " (abrir en https://trace.playwright.dev)");
             }
         } finally {
             DriverManager.cleanup();

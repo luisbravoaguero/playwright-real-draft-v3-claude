@@ -19,6 +19,8 @@ mvn -B test ... -Ddata.seed=12345                          # reproduce the rando
 mvn -B test ... -Dheadless=false -Dbrowser=firefox         # driver.properties keys can be overridden with -D
 mvn -B test ... -Dbrowser.perScenario=false                # try browser reuse per thread (default true = new browser per scenario)
 mvn -B test ... -Dui.legacyWait.scale=0.5                  # shorten the legacy fixed waits (default 1.0)
+mvn -B test ... -Dtrace.mode=on                             # Playwright trace for every scenario (default retain-on-failure)
+mvn -B test ... -Dbrowser.ua.hideHeadless=true -Dbrowser.channel=chromium   # headless mitigations (opt-in)
 ```
 Runner: `src/test/java/com/mapfre/test/runner/RunnerCucumberTest.java`. The default tag expression is `"not @wip"`, and `-Dcucumber.filter.tags` overrides it.
 Reports go to `target/cucumber-reports/` and `target/extent-reports/extent.json`. Add `-Dextent.spark.enabled=true` to also get `index.html`, and use `-Dextent.out.dir` to change the output folder.
@@ -29,7 +31,10 @@ Reports go to `target/cucumber-reports/` and `target/extent-reports/extent.json`
 - **Credentials are never committed.** `user.email` / `user.password` are supplied by:
   - Local: `config/local/global.properties` in the project root, which is git-ignored and only needs the keys it overrides. It uses Java properties syntax, so a backslash must be written as `\\`.
   - Jenkins: the env vars `USER_EMAIL` / `USER_PASSWORD`, injected with `withCredentials(usernamePassword(...))` around the `mvn test` in the pod stage. **This is not added to `JenkinsCI` yet** (the user will do it).
-- Read config through `ConfigManager.getGlobal(key)`, which respects -D and ENV. Don't use `getProperty`, which reads only the file.
+- Read config through `ConfigManager.getGlobal(key)` (or `getDriver(key)` for `driver.properties`), which respects -D and ENV. Don't use `getProperty`, which reads only the file.
+- Diagnostics and timeout keys:
+  - `driver.properties`: `trace.mode` (`off|on|retain-on-failure`) and `trace.dir` (default `target/traces`). The headless mitigations are blank/false by default: `browser.channel`, `browser.ua.hideHeadless`, `browser.userAgent`, `browser.locale`, `browser.timezoneId`.
+  - `global.properties`: `ui.nav.timeoutMs` (blank = `pageLoadTimeout`), `ui.nav.readyTimeoutMs` (60 s), `ui.screenshot.timeoutMs` (10 s).
 - The old WEBMASTER password was committed in the past, so it must be rotated. Never write credentials into source, docs or reports.
 
 ## Architecture
@@ -58,8 +63,15 @@ src/test/resources
 - **Step classes** take `PageProvider` (+ `ScenarioContext` when needed) through the constructor (PicoContainer) and create page objects with `new XxxPage(pageProvider.get())`.
 - **Share data between steps** with `ScenarioContext.put/getString` using constants from `ScenarioKeys`. Never use static fields.
 - **Page objects** extend `BasePage`. Define locators as `private final Locator` fields in the constructor, and prefer `getByRole`/`getByLabel`/`getByText` over XPath.
+- **Navigation / diagnostics:** navigate with `AppReadiness.navegar(page, url, senalListo)`, which is what `BasePage.navigate()` and `LoginPage.navigate()` use. It waits for `DOMContentLoaded`, never `load`.
+  - The readiness signal is an element that proves the SPA rendered. On a timeout, the error is labeled `[NAVEGACION]`, `[APP_NO_RENDERIZO]`, `[SPINNER_ATASCADO]` or `[CONTENIDO_INESPERADO]` and carries `PageDiagnostics.capturar(page)`.
+  - `ActivityRecorder` (attached per context in `DriverFactory`, so popups are covered too) adds the pending/failed requests, HTTP >= 400 responses and console/JS errors. URLs are logged without the query string.
+  - `UiSync` spinner timeouts now throw `FrameworkException` with the same diagnosis instead of a bare `TimeoutError`.
 - **Synchronization:** perform the action, then `UiSync.waitForAppIdle(page)`, or use the `*AndSync` helpers in `BasePage`. For "success or error?" transitions, use `FirstAppearanceRace` / `FirstDisappearanceRace` (the `processAndAssert...(timeoutMs, quietMs)` methods). Don't add new `waitForTimeout`/`Thread.sleep`.
-- **Evidence:** `ExtentEvidence.shot("...")` in steps, `Checkpoint.capture("...")` from main code. Every step is also screenshotted automatically, **once**: `ExtentCucumberStepsPlugin` takes the capture and `Hooks.@AfterStep` reuses it for the Cucumber report (`ExtentReportManager.takeLastStepScreenshot()`). Don't add another capture in hooks.
+- **Evidence:** `ExtentEvidence.shot("...")` in steps, `Checkpoint.capture("...")` from main code. Every step is also screenshotted automatically, **once**: `ExtentCucumberStepsPlugin` takes the capture and `Hooks.@AfterStep` reuses it for the Cucumber report (`ExtentReportManager.takeLastStepScreenshot()`). Don't add another capture in hooks: the failed step's screenshot is the failure evidence.
+  - Only PASSED and FAILED steps are captured; SKIPPED steps are not.
+  - Every `ScreenshotUtils` capture has its own timeout (`ui.screenshot.timeoutMs`).
+  - On failure, `Hooks.@After` saves a Playwright trace (`TraceRecorder`, before `cleanup()`) and logs its path to Extent.
 - **Popups / new tabs:** open them with `BasePage.clickAndCapturePopup(locator)` or `PopupHandler.abrir(page, trigger)` (`page.waitForPopup`). The popup becomes the **active page**: `DriverManager.page()`, `PageProvider`, `UiSync` and the per-step screenshots all use it. Return with `PopupHandler.cerrarYVolver()` / `volverAPrincipal()`, or reactivate a popup with `activar(p)`. If a tab closes by itself, the main page becomes active again. Generic steps are in `PestanasSteps`. Steps that act on a popup must build their page objects **inside the step method** (`new XxxPopupPage(pageProvider.get())`), not in the constructor, because PicoContainer creates a step class when it is first used, so a constructor would capture whichever tab was active at that moment. Don't poll `context.pages()`, don't use `waitForTimeout`, and never close the main page. A runnable reference on a public site (no VPN) is `features/demo/demo_nueva_pestana.feature` (`-Dcucumber.filter.tags="@nuevapestana"`), with `PracticaPage`/`CursosPage` and `NuevaPestanaDemoSteps`. Register per-tab handlers such as `addLocatorHandler` once, when the tab opens, not in a page-object constructor.
   - **Popup timeouts:** `PopupHandler.abrir` gives the popup its own timeout (`ui.popup.pageTimeoutMs`, default 120 s) for actions, navigation and assertions, and returns it only after `UiSync.waitForAppIdle(popup)`. Other tabs keep `pageLoadTimeout` (actions) and `ui.assert.timeoutMs` (assertions, 30 s). Playwright's assertion timeout is a JVM-wide static, so the per-tab value lives in `PageTimeouts` and `ElementAsserts` applies it to every assertion. In popup page objects, assert through `ElementAsserts` (`assertUrl` for URLs) or pass `PageTimeouts.assertTimeoutFor(locator)` to a direct `assertThat`. Never raise a global timeout for a slow tab.
 - **Driver lifecycle:** don't create or close Playwright/Browser in steps or pages. `Hooks` calls `DriverFactory.init()` / `DriverManager.cleanup()` per scenario and `DriverManager.shutdownAll()` in `@AfterAll`.
@@ -107,6 +119,30 @@ Parameters: RAMA, TAGS, CLASE_RUNNER, HILOS_DE_EJECUCION. Stages:
   - 11 rethrows now pass the cause.
   - 4 silent catches in SOAT/Accidentes pages now `log.debug` the reason.
 - **Verification:** there is no OIM access from the dev machine (VPN only). The changes were verified with compilation, a dry run (81 scenarios), and a local Cucumber smoke run with real Chromium (thread reuse, per-scenario flag, screenshot counts, "Caused by" in Extent, no leftover browser processes). They still need to be run on a VPN machine.
+
+## History and decisions (2026-10-21): headless login timeouts
+- Problem: in headless mode the OIM login timed out after ~60 s, and the error didn't say whether navigation stalled, the page stayed blank, the spinner got stuck or other content rendered.
+- Causes found:
+  - `navigate()` waited for `load`, which depends on third-party resources.
+  - `UiSync` treats a spinner that doesn't exist yet (blank page) as idle.
+  - Nothing recorded the network or the console.
+  - `screenshot()` waits for web fonts with no timeout of its own, and SKIPPED steps were captured too.
+  - There was an extra failure capture in `@After`.
+  - `DriverFactory` leaked the `Playwright` process when the browser failed to launch, and leaked the context when `newPage()` failed.
+- Implemented:
+  - `AppReadiness` (phased navigation)
+  - `utils/diagnostics/ActivityRecorder` + `PageDiagnostics`
+  - `TraceRecorder` (default `retain-on-failure`)
+  - screenshots bounded to 10 s, captured only for PASSED/FAILED
+  - both leaks fixed
+  - opt-in headless mitigations, at the user's request: UA without "HeadlessChrome", `browser.channel`, locale/timezone
+- Verified locally without VPN:
+  - compile and dry run
+  - `@nuevapestana` with `-Dtrace.mode=on`
+  - simulated login failures (`-Dapp.url.qa=about:blank` / `https://example.com` / an unreachable IP) correctly classified as APP_NO_RENDERIZO / CONTENIDO_INESPERADO / NAVEGACION, with a trace saved and no leftover processes
+- Still pending:
+  - Real VPN headless run: compare the per-phase timings (`[NAVEGACION]`/`[RENDER]`/`[SPINNER]` log lines), then try `-Dbrowser.ua.hideHeadless=true` and `-Dbrowser.channel=chromium`.
+  - Jenkins doesn't archive `target/traces/` yet. That needs a `JenkinsCI` change, which the user will make.
 
 ## Known issues / backlog
 - **Undefined step:** `features/poliza/auto/oim_emision_auto.feature` line 14 ("en la pagina Emisión Póliza Auto Nuevo completamos el formulario Datos del Contratante en la seccion Datos del Vehiculo ingresamos la frecuencia de uso ..."). No step definition matches it, so a default run reports it as UNDEFINED.
