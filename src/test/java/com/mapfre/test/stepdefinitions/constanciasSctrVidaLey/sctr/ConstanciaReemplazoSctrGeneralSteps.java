@@ -5,10 +5,13 @@ import com.mapfre.playwright.pageobjects.constanciasSctrVidaLey.sctr.ReemplazarP
 import com.mapfre.playwright.pageobjects.constanciasSctrVidaLey.sctr.declaracionSctrGeneral.PerfilClientePage;
 import com.mapfre.playwright.pageobjects.constanciasSctrVidaLey.sctr.mesVencido.PerfilClienteSctrGeneralPage;
 import com.mapfre.reporting.ExtentEvidence;
+import com.mapfre.reporting.ReportLogger;
 import com.mapfre.test.hooks.PageProvider;
 import com.mapfre.test.hooks.ScenarioContext;
 import com.mapfre.test.hooks.ScenarioKeys;
-import com.mapfre.utils.testdata.RandomData;
+import com.mapfre.utils.testdata.documentos.ConsumidorDocumento;
+import com.mapfre.utils.testdata.documentos.DocumentoAsignado;
+import com.mapfre.utils.testdata.documentos.DocumentosPrueba;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Then;
 import testdata.TemplateFactory;
@@ -50,7 +53,9 @@ public class ConstanciaReemplazoSctrGeneralSteps {
 
     @And("en la pagina Reemplazar Planilla SCTR General carga la planilla del asegurado a reemplazar")
     public void enLaPaginaReemplazarPlanillaSCTRGeneralCargaLaPlanillaDelAseguradoAReemplazar() {
-        String numeroDocumentoAseguradoReemplazante = RandomData.idDocumentPeru(9,8);
+        DocumentoAsignado documento = DocumentosPrueba.asignar(ConsumidorDocumento.REEMPLAZO_SCTR_GENERAL);
+        ReportLogger.info("Asegurado reemplazante: " + documento.descripcion());
+        String numeroDocumentoAseguradoReemplazante = documento.valor();
         String nombreArchivo = "File_constancia_reemplazo_sctr";
         String montoSueldoAseguradoReemplazado = scenarioContext.getString(ScenarioKeys.ConstanciasSctrVidaLey.MONTO_SUELDO_ASEGURADO_REEMPLAZADO);
         scenarioContext.put(ScenarioKeys.ConstanciasSctrVidaLey.NUMERO_DOCUMENTO_ASEGURADO_REEMPLAZANTE, numeroDocumentoAseguradoReemplazante);

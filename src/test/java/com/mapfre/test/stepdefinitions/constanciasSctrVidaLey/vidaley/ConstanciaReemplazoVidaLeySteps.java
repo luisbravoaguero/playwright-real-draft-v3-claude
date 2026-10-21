@@ -4,10 +4,13 @@ import com.mapfre.playwright.pageobjects.constanciasSctrVidaLey.vidaley.Constanc
 import com.mapfre.playwright.pageobjects.constanciasSctrVidaLey.vidaley.ReemplazarPlanillaVidaLeyPage;
 import com.mapfre.playwright.pageobjects.constanciasSctrVidaLey.vidaley.mesVencido.PerfilClienteVidaLeyPage;
 import com.mapfre.reporting.ExtentEvidence;
+import com.mapfre.reporting.ReportLogger;
 import com.mapfre.test.hooks.PageProvider;
 import com.mapfre.test.hooks.ScenarioContext;
 import com.mapfre.test.hooks.ScenarioKeys;
-import com.mapfre.utils.testdata.RandomData;
+import com.mapfre.utils.testdata.documentos.ConsumidorDocumento;
+import com.mapfre.utils.testdata.documentos.DocumentoAsignado;
+import com.mapfre.utils.testdata.documentos.DocumentosPrueba;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Then;
 import testdata.TemplateFactory;
@@ -49,7 +52,9 @@ public class ConstanciaReemplazoVidaLeySteps {
 
     @And("en la pagina Reemplazar Planilla Vida Ley carga la planilla del asegurado a reemplazar")
     public void enLaPaginaReemplazarPlanillaVidaLeyCargaLaPlanillaDelAseguradoAReemplazar() {
-        String numeroDocumentoAseguradoReemplazante = RandomData.idDocumentPeru(9,8);
+        DocumentoAsignado documento = DocumentosPrueba.asignar(ConsumidorDocumento.REEMPLAZO_VIDA_LEY);
+        ReportLogger.info("Asegurado reemplazante: " + documento.descripcion());
+        String numeroDocumentoAseguradoReemplazante = documento.valor();
         String nombreArchivo = "File_constancia_reemplazo_vidaley";
         String montoSueldoAseguradoReemplazado = scenarioContext.getString(ScenarioKeys.ConstanciasSctrVidaLey.MONTO_SUELDO_ASEGURADO_REEMPLAZADO);
         scenarioContext.put(ScenarioKeys.ConstanciasSctrVidaLey.NUMERO_DOCUMENTO_ASEGURADO_REEMPLAZANTE, numeroDocumentoAseguradoReemplazante);
